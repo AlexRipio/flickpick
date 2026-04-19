@@ -13,11 +13,24 @@ const RoomLobby = () => {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const unsub = subscribe(() => setRoom(getRoom(roomId)));
-    const onStorage = () => setRoom(getRoom(roomId));
+    const unsub = subscribe(() => {
+      const r = getRoom(roomId);
+      setRoom(r);
+      if (r?.status === 'live') navigate(`/room/${roomId}`, { replace: true });
+    });
+    const onStorage = () => {
+      const r = getRoom(roomId);
+      setRoom(r);
+      if (r?.status === 'live') navigate(`/room/${roomId}`, { replace: true });
+    };
     window.addEventListener('storage', onStorage);
     // Hydrate from cloud if the room isn't here yet (e.g. joined by link on a fresh device).
-    hydrateRoomById(roomId).then(r => { if (r) setRoom(r); });
+    hydrateRoomById(roomId).then(r => {
+      if (r) {
+        setRoom(r);
+        if (r.status === 'live') navigate(`/room/${roomId}`, { replace: true });
+      }
+    });
     return () => { unsub?.(); window.removeEventListener('storage', onStorage); };
   }, [roomId]);
 
