@@ -1,0 +1,215 @@
+// UI primitives: buttons, chips, sheets, confetti. Styled for FlickPick dark theme.
+
+function GradientButton({ children, onClick, style = {}, variant = 'flame', disabled }) {
+  const grads = {
+    flame:  FP.flame,
+    violet: 'linear-gradient(135deg, #8B5CF6 0%, #5B1DB5 100%)',
+    ghost:  'transparent',
+  };
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      width: '100%', height: 56, borderRadius: 999,
+      background: grads[variant],
+      border: variant === 'ghost' ? '1px solid rgba(255,255,255,0.18)' : 'none',
+      color: '#fff',
+      fontFamily: '"Space Grotesk", "Inter", system-ui',
+      fontSize: 16, fontWeight: 700, letterSpacing: 0.2,
+      cursor: disabled ? 'default' : 'pointer',
+      opacity: disabled ? 0.45 : 1,
+      boxShadow: variant === 'flame'
+        ? '0 8px 24px rgba(255,59,107,0.35), inset 0 1px 0 rgba(255,255,255,0.25)'
+        : variant === 'violet'
+          ? '0 8px 24px rgba(139,92,246,0.35), inset 0 1px 0 rgba(255,255,255,0.2)'
+          : 'none',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      transition: 'transform 0.12s, box-shadow 0.2s',
+      ...style,
+    }}
+    onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.97)'}
+    onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+    >{children}</button>
+  );
+}
+
+function IconButton({ children, onClick, style = {}, size = 48 }) {
+  return (
+    <button onClick={onClick} style={{
+      width: size, height: size, borderRadius: 999,
+      background: 'rgba(255,255,255,0.08)',
+      border: '1px solid rgba(255,255,255,0.12)',
+      color: '#fff', cursor: 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      backdropFilter: 'blur(10px)',
+      WebkitBackdropFilter: 'blur(10px)',
+      ...style,
+    }}>{children}</button>
+  );
+}
+
+function Chip({ active, onClick, children, size = 'md' }) {
+  const pad = size === 'sm' ? '6px 12px' : '10px 16px';
+  const fs = size === 'sm' ? 12 : 14;
+  return (
+    <button onClick={onClick} style={{
+      padding: pad, borderRadius: 999,
+      background: active ? FP.flame : 'rgba(255,255,255,0.06)',
+      color: active ? '#fff' : FP.textDim,
+      border: active ? 'none' : '1px solid rgba(255,255,255,0.1)',
+      fontFamily: '"Inter", system-ui',
+      fontSize: fs, fontWeight: 600, letterSpacing: 0.1,
+      cursor: 'pointer',
+      boxShadow: active ? '0 4px 14px rgba(255,59,107,0.3)' : 'none',
+      transition: 'all 0.18s',
+      whiteSpace: 'nowrap',
+    }}>{children}</button>
+  );
+}
+
+function TextField({ label, value, onChange, type = 'text', placeholder, icon }) {
+  return (
+    <div style={{ width: '100%' }}>
+      {label && (
+        <div style={{
+          fontSize: 12, fontWeight: 600, color: FP.textDim,
+          letterSpacing: 1, textTransform: 'uppercase',
+          marginBottom: 8, paddingLeft: 4,
+        }}>{label}</div>
+      )}
+      <div style={{
+        height: 56, borderRadius: 16,
+        background: 'rgba(255,255,255,0.05)',
+        border: '1px solid rgba(255,255,255,0.09)',
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '0 16px',
+      }}>
+        {icon}
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          style={{
+            flex: 1, background: 'transparent', border: 'none', outline: 'none',
+            color: FP.text, fontSize: 16,
+            fontFamily: '"Inter", system-ui',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Full-screen confetti burst using pure DOM particles
+function Confetti({ active }) {
+  if (!active) return null;
+  const pieces = Array.from({ length: 60 }, (_, i) => {
+    const colors = ['#FF6B4A', '#FF3B6B', '#9B3BFF', '#4EFFD6', '#FFB547', '#8B5CF6'];
+    const color = colors[i % colors.length];
+    const angle = (i / 60) * Math.PI * 2 + Math.random() * 0.5;
+    const dist = 180 + Math.random() * 280;
+    const dx = Math.cos(angle) * dist;
+    const dy = Math.sin(angle) * dist - 60;
+    const delay = Math.random() * 0.25;
+    const size = 6 + Math.random() * 10;
+    const rot = Math.random() * 720 - 360;
+    const shape = i % 3;
+    return { dx, dy, delay, size, rot, color, shape, i };
+  });
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 100,
+      overflow: 'hidden',
+    }}>
+      {pieces.map((p) => (
+        <div key={p.i} style={{
+          position: 'absolute', left: '50%', top: '50%',
+          width: p.size, height: p.shape === 2 ? p.size * 0.4 : p.size,
+          background: p.color,
+          borderRadius: p.shape === 0 ? '50%' : p.shape === 1 ? '3px' : '1px',
+          transform: 'translate(-50%, -50%)',
+          animation: `confetti-${p.i} 1.4s cubic-bezier(.1,.6,.2,1) ${p.delay}s forwards`,
+          opacity: 0,
+        }}/>
+      ))}
+      <style>{pieces.map(p => `
+        @keyframes confetti-${p.i} {
+          0%   { transform: translate(-50%,-50%) scale(0.2) rotate(0deg); opacity: 0; }
+          15%  { opacity: 1; }
+          100% { transform: translate(calc(-50% + ${p.dx}px), calc(-50% + ${p.dy}px)) scale(1) rotate(${p.rot}deg); opacity: 0; }
+        }
+      `).join('\n')}</style>
+    </div>
+  );
+}
+
+// Ambient glow backdrop
+function AmbientBackdrop({ hue = 280 }) {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, overflow: 'hidden', zIndex: 0,
+      background: `
+        radial-gradient(80% 50% at 15% 0%, oklch(0.35 0.18 ${hue}) 0%, transparent 50%),
+        radial-gradient(80% 50% at 100% 100%, oklch(0.30 0.18 ${(hue + 50) % 360}) 0%, transparent 55%),
+        linear-gradient(180deg, #07050E 0%, #12091F 100%)
+      `,
+    }}>
+      <div style={{
+        position: 'absolute', top: '-20%', left: '-10%',
+        width: 320, height: 320, borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(255,107,74,0.25), transparent 60%)',
+        filter: 'blur(40px)',
+      }}/>
+      <div style={{
+        position: 'absolute', bottom: '-10%', right: '-15%',
+        width: 360, height: 360, borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(155,59,255,0.28), transparent 60%)',
+        filter: 'blur(40px)',
+      }}/>
+    </div>
+  );
+}
+
+function StatusBarDark({ time = '9:41' }) {
+  return (
+    <div style={{
+      height: 54, display: 'flex', alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      padding: '0 28px 6px', color: '#fff',
+      fontFamily: '-apple-system, system-ui',
+      position: 'relative', zIndex: 5, flexShrink: 0,
+    }}>
+      <div style={{ fontSize: 15, fontWeight: 600 }}>{time}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <svg width="16" height="11" viewBox="0 0 19 12">
+          <rect x="0" y="7.5" width="3.2" height="4.5" rx="0.7" fill="#fff"/>
+          <rect x="4.8" y="5" width="3.2" height="7" rx="0.7" fill="#fff"/>
+          <rect x="9.6" y="2.5" width="3.2" height="9.5" rx="0.7" fill="#fff"/>
+          <rect x="14.4" y="0" width="3.2" height="12" rx="0.7" fill="#fff"/>
+        </svg>
+        <svg width="24" height="12" viewBox="0 0 27 13">
+          <rect x="0.5" y="0.5" width="23" height="12" rx="3.5" stroke="#fff" strokeOpacity="0.5" fill="none"/>
+          <rect x="2" y="2" width="16" height="9" rx="2" fill="#fff"/>
+          <path d="M25 4.5V8.5C25.8 8.2 26.5 7.2 26.5 6.5C26.5 5.8 25.8 4.8 25 4.5Z" fill="#fff" fillOpacity="0.5"/>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function HomeIndicator() {
+  return (
+    <div style={{
+      position: 'absolute', bottom: 8, left: 0, right: 0,
+      display: 'flex', justifyContent: 'center', zIndex: 60,
+      pointerEvents: 'none',
+    }}>
+      <div style={{ width: 139, height: 5, borderRadius: 100, background: 'rgba(255,255,255,0.5)' }}/>
+    </div>
+  );
+}
+
+Object.assign(window, {
+  GradientButton, IconButton, Chip, TextField, Confetti,
+  AmbientBackdrop, StatusBarDark, HomeIndicator,
+});

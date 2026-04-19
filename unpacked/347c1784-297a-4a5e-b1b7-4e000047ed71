@@ -1,0 +1,83 @@
+// Brand pieces — FlickPick logo mark + wordmark, gradient helpers.
+// Gradient comes from the logo: warm flame (orange-red) → cool reel (violet-magenta-blue).
+
+const FP = {
+  flame:   'linear-gradient(135deg, #FFB547 0%, #FF6B4A 35%, #FF3B6B 70%, #9B3BFF 100%)',
+  flameSolid: '#FF5A7A',
+  primary: '#8B5CF6',       // deep violet
+  primaryDeep: '#5B1DB5',
+  pink:    '#FF2E93',       // electric magenta
+  cyan:    '#4EFFD6',       // sparingly
+  bg0:     '#07050E',       // near black
+  bg1:     '#12091F',       // deep navy-violet
+  surface: 'rgba(255,255,255,0.06)',
+  surfaceStrong: 'rgba(255,255,255,0.10)',
+  border:  'rgba(255,255,255,0.10)',
+  text:    '#F5F2FF',
+  textDim: 'rgba(245,242,255,0.62)',
+  textMuted: 'rgba(245,242,255,0.38)',
+};
+
+function FlameMark({ size = 28, animated = false }) {
+  // Simplified flame + reel inspired by the logo; NOT a pixel recreation.
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id="fp-flame" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"  stopColor="#FFB547"/>
+          <stop offset="45%" stopColor="#FF6B4A"/>
+          <stop offset="100%" stopColor="#FF3B6B"/>
+        </linearGradient>
+        <linearGradient id="fp-reel" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#3D2A7A"/>
+          <stop offset="100%" stopColor="#B23BFF"/>
+        </linearGradient>
+      </defs>
+      {/* flame body */}
+      <path d="M30 4 C 34 14, 22 18, 24 30 C 26 40, 18 44, 20 54 C 22 60, 30 60, 32 52 C 34 58, 42 58, 42 48 C 42 38, 34 32, 36 22 C 38 14, 32 10, 30 4 Z"
+        fill="url(#fp-flame)"/>
+      {/* reel strip (curled film) */}
+      <path d="M36 34 Q 54 30, 56 44 Q 58 58, 42 60 L 32 60 Q 46 58, 48 48 Q 50 38, 36 40 Z"
+        fill="url(#fp-reel)"/>
+      {/* film perforations */}
+      {[0, 1, 2].map(i => (
+        <rect key={i} x={42 + i * 4} y={46} width="2.5" height="4" rx="0.6" fill="#fff" opacity="0.9"/>
+      ))}
+      {[0, 1, 2].map(i => (
+        <rect key={i} x={42 + i * 4} y={54} width="2.5" height="4" rx="0.6" fill="#fff" opacity="0.9"/>
+      ))}
+      {animated && (
+        <circle cx="30" cy="20" r="14" fill="#FF6B4A" opacity="0.3">
+          <animate attributeName="r" values="10;18;10" dur="2.4s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.3;0;0.3" dur="2.4s" repeatCount="indefinite"/>
+        </circle>
+      )}
+    </svg>
+  );
+}
+
+function FlickPickWordmark({ height = 24, color }) {
+  // Uses an actual gradient on the text so it mirrors the logo treatment.
+  return (
+    <div style={{
+      fontFamily: '"Space Grotesk", "Inter", system-ui, sans-serif',
+      fontSize: height,
+      fontWeight: 800,
+      letterSpacing: -0.5,
+      lineHeight: 1,
+      background: color || FP.flame,
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+      backgroundClip: 'text',
+      display: 'inline-block',
+    }}>FlickPick</div>
+  );
+}
+
+function FlameLogoImage({ size = 80 }) {
+  // Real logo asset for splash / match reveal
+  return <img src={window.__resources ? window.__resources.flamemark : "assets/flickpick-mark.webp"} width={size} height={size}
+    style={{ display: 'block', filter: 'drop-shadow(0 10px 30px rgba(255,90,120,0.35))' }}/>;
+}
+
+Object.assign(window, { FP, FlameMark, FlickPickWordmark, FlameLogoImage });

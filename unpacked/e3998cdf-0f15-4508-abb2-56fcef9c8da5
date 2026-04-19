@@ -1,0 +1,939 @@
+// Swipe screen + Match screen + Filters sheet + History + Profile
+
+function SwipeScreen({ room, onBack, onMatch, onOpenFilters, onOpenHistory, queue, setQueue, matches, filters }) {
+  const [dragOffset, setDragOffset] = React.useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = React.useState(false);
+  const [exitDir, setExitDir] = React.useState(null);
+  const [detailMovie, setDetailMovie] = React.useState(null);
+  const startRef = React.useRef(null);
+  const startTimeRef = React.useRef(0);
+  const cardRef = React.useRef(null);
+
+  // Filtered queue
+  const filtered = React.useMemo(() => {
+    return queue.filter(m => {
+      if (filters.type !== 'All' && m.type !== filters.type) return false;
+      if (filters.genres.length && !m.genres.some(g => filters.genres.includes(g))) return false;
+      if (filters.platforms.length && !filters.platforms.includes(m.platform)) return false;
+      if (m.year < filters.yearRange[0] || m.year > filters.yearRange[1]) return false;
+      return true;
+    });
+  }, [queue, filters]);
+
+  const top = filtered[0];
+  const next = filtered[1];
+  const after = filtered[2];
+
+  const handlePointerDown = (e) => {
+    startRef.current = { x: e.clientX, y: e.clientY };
+    startTimeRef.current = Date.now();
+    setDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const handlePointerMove = (e) => {
+    if (!startRef.current) return;
+    setDragOffset({ x: e.clientX - startRef.current.x, y: e.clientY - startRef.current.y });
+  };
+  const handlePointerUp = () => {
+    const { x, y } = dragOffset;
+    const dt = Date.now() - startTimeRef.current;
+    const dist = Math.hypot(x, y);
+    // Tap: short press, minimal movement → open detail
+    if (dt < 260 && dist < 8 && top) {
+      setDetailMovie(top);
+      setDragOffset({ x: 0, y: 0 });
+    } else if (x > 90) swipe('right');
+    else if (x < -90) swipe('left');
+    else { setDragOffset({ x: 0, y: 0 }); }
+    setDragging(false);
+    startRef.current = null;
+  };
+
+  const swipe = (dir) => {
+    setExitDir(dir);
+    setTimeout(() => {
+      if (top && dir === 'right') {
+        // Simulate match on ~30% of right swipes
+        if (Math.random() < 0.45) onMatch(top);
+      }
+      setQueue(q => q.filter(m => m.id !== top?.id));
+      setExitDir(null);
+      setDragOffset({ x: 0, y: 0 });
+    }, 320);
+  };
+
+  const rotate = dragOffset.x * 0.08;
+  const likeOp = Math.min(1, Math.max(0, dragOffset.x / 120));
+  const skipOp = Math.min(1, Math.max(0, -dragOffset.x / 120));
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <AmbientBackdrop hue={280}/>
+      {/* top bar */}
+      <div style={{
+        position: 'relative', zIndex: 5,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 18px',
+      }}>
+        <IconButton onClick={onBack} size={40}>
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M9 2L3 7l6 5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </IconButton>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div style={{ fontSize: 10, color: FP.textMuted, letterSpacing: 2, textTransform: 'uppercase' }}>
+            Room · {room.code}
+          </div>
+          <div style={{ display: 'flex', gap: -4, marginTop: 4 }}>
+            {room.members.map((m, i) => (
+              <div key={i} style={{
+                width: 24, height: 24, borderRadius: 999,
+                background: m.color, color: '#fff',
+                border: '2px solid #0B0618',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, fontWeight: 700,
+                marginLeft: i === 0 ? 0 : -8,
+              }}>{m.avatar}</div>
+            ))}
+          </div>
+        </div>
+        <IconButton onClick={onOpenFilters} size={40}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M3 6h18M6 12h12M10 18h4" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </IconButton>
+      </div>
+
+      {/* progress */}
+      <div style={{ position: 'relative', zIndex: 5, padding: '0 24px', marginBottom: 10 }}>
+        <div style={{
+          height: 3, borderRadius: 2, background: 'rgba(255,255,255,0.08)',
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            height: '100%', width: `${Math.max(5, 100 - (filtered.length / queue.length) * 100)}%`,
+            background: FP.flame, borderRadius: 2,
+            transition: 'width 0.3s',
+          }}/>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: FP.textMuted }}>
+          <span>{matches.length} matched</span>
+          <span>{filtered.length} left</span>
+        </div>
+      </div>
+
+      {/* card stack */}
+      <div style={{
+        flex: 1, position: 'relative', padding: '10px 22px 0',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {!top ? (
+          <EmptyQueue onRefresh={onOpenFilters}/>
+        ) : (
+          <>
+            {/* 3rd card peek */}
+            {after && (
+              <Card movie={after} style={{
+                transform: 'scale(0.88) translateY(24px)', opacity: 0.5, zIndex: 1,
+              }} showActions={false}/>
+            )}
+            {next && (
+              <Card movie={next} style={{
+                transform: 'scale(0.94) translateY(12px)', opacity: 0.85, zIndex: 2,
+              }} showActions={false}/>
+            )}
+            <Card
+              ref={cardRef}
+              movie={top}
+              style={{
+                zIndex: 3,
+                transform: exitDir
+                  ? `translate(${exitDir === 'right' ? 600 : -600}px, ${dragOffset.y}px) rotate(${exitDir === 'right' ? 30 : -30}deg)`
+                  : `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px) rotate(${rotate}deg)`,
+                transition: dragging ? 'none' : 'transform 0.32s cubic-bezier(.2,.8,.3,1.2)',
+                cursor: dragging ? 'grabbing' : 'grab',
+                touchAction: 'none',
+              }}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              likeOp={likeOp}
+              skipOp={skipOp}
+              showActions
+            />
+          </>
+        )}
+      </div>
+
+      {/* detail sheet */}
+      {detailMovie && (
+        <DetailSheet
+          movie={detailMovie}
+          onClose={() => setDetailMovie(null)}
+          onLike={() => { setDetailMovie(null); swipe('right'); }}
+          onSkip={() => { setDetailMovie(null); swipe('left'); }}
+        />
+      )}
+
+      {/* action buttons */}
+      {top && (
+        <div style={{
+          position: 'relative', zIndex: 5, padding: '18px 24px 28px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16,
+        }}>
+          <ActionFAB onClick={() => swipe('left')} variant="skip" size={56}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M6 6l12 12M6 18L18 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/>
+            </svg>
+          </ActionFAB>
+          <ActionFAB onClick={onOpenHistory} variant="neutral" size={46}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M20.8 11a9 9 0 11-2.9-7.6M21 3v5h-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </ActionFAB>
+          <ActionFAB onClick={() => swipe('right')} variant="like" size={68}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+              <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" fill="#fff"/>
+            </svg>
+          </ActionFAB>
+          <ActionFAB onClick={() => swipe('right')} variant="boost" size={46}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="#FFB547"/>
+            </svg>
+          </ActionFAB>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionFAB({ children, onClick, variant, size }) {
+  const bgs = {
+    skip:    'linear-gradient(135deg, #2a1f3d, #1a1028)',
+    like:    FP.flame,
+    neutral: 'rgba(255,255,255,0.06)',
+    boost:   'rgba(255,183,71,0.12)',
+  };
+  const borders = {
+    skip:    '1.5px solid rgba(255,255,255,0.1)',
+    like:    'none',
+    neutral: '1px solid rgba(255,255,255,0.1)',
+    boost:   '1px solid rgba(255,183,71,0.35)',
+  };
+  const shadows = {
+    skip:    '0 6px 16px rgba(0,0,0,0.4)',
+    like:    '0 10px 28px rgba(255,59,107,0.45)',
+    neutral: 'none',
+    boost:   '0 4px 12px rgba(255,183,71,0.25)',
+  };
+  return (
+    <button onClick={onClick} style={{
+      width: size, height: size, borderRadius: 999,
+      background: bgs[variant], border: borders[variant],
+      boxShadow: shadows[variant],
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      cursor: 'pointer', color: '#fff',
+      transition: 'transform 0.12s',
+    }}
+    onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.9)'}
+    onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+    >{children}</button>
+  );
+}
+
+const Card = React.forwardRef(function Card({ movie, style = {}, likeOp = 0, skipOp = 0, showActions, ...rest }, ref) {
+  return (
+    <div ref={ref} {...rest} style={{
+      position: 'absolute', top: 10, left: 22, right: 22, bottom: 10,
+      borderRadius: 28, overflow: 'hidden',
+      background: '#1a0f2e',
+      boxShadow: '0 30px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06)',
+      ...style,
+    }}>
+      <Poster movie={movie} showBadge={true}/>
+      {/* like/skip stamps */}
+      {showActions && likeOp > 0.05 && (
+        <div style={{
+          position: 'absolute', top: 30, right: 22,
+          padding: '6px 14px', borderRadius: 10,
+          border: '3px solid #4EFFD6',
+          color: '#4EFFD6',
+          fontFamily: '"Space Grotesk"', fontSize: 24, fontWeight: 800,
+          transform: `rotate(14deg) scale(${0.8 + likeOp * 0.3})`,
+          opacity: likeOp,
+          letterSpacing: 2,
+          textShadow: '0 0 20px rgba(78,255,214,0.5)',
+          boxShadow: '0 0 20px rgba(78,255,214,0.4)',
+          background: 'rgba(0,0,0,0.3)',
+        }}>LIKE</div>
+      )}
+      {showActions && skipOp > 0.05 && (
+        <div style={{
+          position: 'absolute', top: 30, left: 22,
+          padding: '6px 14px', borderRadius: 10,
+          border: '3px solid #FF3B6B',
+          color: '#FF3B6B',
+          fontFamily: '"Space Grotesk"', fontSize: 24, fontWeight: 800,
+          transform: `rotate(-14deg) scale(${0.8 + skipOp * 0.3})`,
+          opacity: skipOp,
+          letterSpacing: 2,
+          background: 'rgba(0,0,0,0.3)',
+        }}>SKIP</div>
+      )}
+
+      {/* info overlay */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        padding: '80px 22px 22px',
+        background: 'linear-gradient(180deg, transparent, rgba(7,5,14,0.95) 80%)',
+      }}>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+          {movie.genres.map(g => (
+            <span key={g} style={{
+              fontSize: 10, fontWeight: 700, letterSpacing: 1,
+              textTransform: 'uppercase',
+              padding: '3px 8px', borderRadius: 6,
+              background: 'rgba(255,255,255,0.1)',
+              color: '#fff',
+              backdropFilter: 'blur(10px)',
+            }}>{g}</span>
+          ))}
+        </div>
+        <div style={{
+          fontFamily: '"Space Grotesk"',
+          fontSize: 28, fontWeight: 800, color: '#fff',
+          lineHeight: 1.05, letterSpacing: -0.5,
+        }}>{movie.title}</div>
+        <div style={{
+          display: 'flex', gap: 10, alignItems: 'center',
+          marginTop: 6, color: FP.textDim, fontSize: 12, fontWeight: 600,
+        }}>
+          <span>{movie.year}</span>
+          <span style={{ width: 3, height: 3, borderRadius: 999, background: FP.textMuted }}/>
+          <span>{movie.runtime}</span>
+          <span style={{ width: 3, height: 3, borderRadius: 999, background: FP.textMuted }}/>
+          <span>{movie.platform}</span>
+        </div>
+        <div style={{
+          marginTop: 10, fontSize: 12.5, color: FP.textDim, lineHeight: 1.5,
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}>{movie.overview}</div>
+        {/* tap hint */}
+        <div style={{
+          marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '5px 10px', borderRadius: 999,
+          background: 'rgba(255,255,255,0.08)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          fontSize: 11, fontWeight: 600, color: '#fff',
+          backdropFilter: 'blur(10px)',
+        }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="#fff" strokeWidth="2"/>
+            <path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+          Tap for details
+        </div>
+      </div>
+    </div>
+  );
+});
+
+function EmptyQueue({ onRefresh }) {
+  return (
+    <div style={{
+      textAlign: 'center', padding: 40,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18,
+    }}>
+      <div style={{ fontSize: 48, opacity: 0.6 }}>🎞️</div>
+      <div style={{
+        fontFamily: '"Space Grotesk"', fontSize: 22, fontWeight: 700, color: FP.text,
+      }}>You've seen it all</div>
+      <div style={{ fontSize: 14, color: FP.textDim, maxWidth: 240 }}>
+        Try loosening your filters — there are more matches waiting.
+      </div>
+      <button onClick={onRefresh} style={{
+        marginTop: 8, padding: '12px 22px', borderRadius: 999,
+        background: FP.flame, color: '#fff', border: 'none',
+        fontWeight: 700, fontSize: 14, cursor: 'pointer',
+      }}>Adjust filters</button>
+    </div>
+  );
+}
+
+function MatchScreen({ movie, users, onKeep, onOpen }) {
+  const [show, setShow] = React.useState(false);
+  React.useEffect(() => {
+    const t = setTimeout(() => setShow(true), 50);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, overflow: 'hidden',
+      background: 'radial-gradient(120% 80% at 50% 30%, #3A0F5E 0%, #0B0420 60%, #000 100%)',
+    }}>
+      {/* poster blurred bg */}
+      <div style={{ position: 'absolute', inset: 0, opacity: 0.35, filter: 'blur(30px) saturate(140%)' }}>
+        <Poster movie={movie} showBadge={false}/>
+      </div>
+      <Confetti active={show}/>
+
+      <div style={{
+        position: 'relative', zIndex: 2, height: '100%',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        padding: '60px 28px 40px', textAlign: 'center',
+      }}>
+        {/* animated poster */}
+        <div style={{
+          width: 210, height: 300, borderRadius: 26, overflow: 'hidden',
+          position: 'relative', marginTop: 30,
+          transform: show ? 'scale(1) rotate(0deg)' : 'scale(0.5) rotate(-20deg)',
+          opacity: show ? 1 : 0,
+          transition: 'transform 0.7s cubic-bezier(.2,.8,.3,1.4), opacity 0.4s',
+          boxShadow: '0 30px 60px rgba(155,59,255,0.5), 0 0 80px rgba(255,59,107,0.4)',
+        }}>
+          <Poster movie={movie} showBadge={false}/>
+          {/* glow ring */}
+          <div style={{
+            position: 'absolute', inset: -4, borderRadius: 26,
+            border: '2px solid transparent',
+            backgroundImage: FP.flame,
+            backgroundClip: 'border-box',
+            zIndex: -1,
+          }}/>
+        </div>
+
+        {/* title text */}
+        <div style={{
+          marginTop: 30,
+          transform: show ? 'translateY(0)' : 'translateY(20px)',
+          opacity: show ? 1 : 0,
+          transition: 'all 0.5s 0.2s',
+        }}>
+          <div style={{
+            fontFamily: '"Space Grotesk"', fontSize: 13,
+            letterSpacing: 5, color: '#4EFFD6',
+            textTransform: 'uppercase', fontWeight: 700, marginBottom: 8,
+          }}>It's a match</div>
+          <div style={{
+            fontFamily: '"Space Grotesk"', fontSize: 40, fontWeight: 800,
+            color: '#fff', letterSpacing: -1.2, lineHeight: 1,
+            background: FP.flame,
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            paddingBottom: 6,
+          }}>{movie.title}</div>
+          <div style={{ fontSize: 14, color: FP.textDim, marginTop: 6 }}>
+            {users.map(u => u.name).join(' & ')} both swiped right
+          </div>
+        </div>
+
+        {/* avatars */}
+        <div style={{
+          display: 'flex', marginTop: 20,
+          transform: show ? 'scale(1)' : 'scale(0.7)',
+          opacity: show ? 1 : 0,
+          transition: 'all 0.5s 0.35s',
+        }}>
+          {users.map((u, i) => (
+            <div key={i} style={{
+              width: 48, height: 48, borderRadius: 999,
+              background: u.color, color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: 700, fontSize: 16,
+              border: '3px solid #0B0420',
+              marginLeft: i === 0 ? 0 : -14,
+              boxShadow: '0 6px 18px rgba(0,0,0,0.4)',
+            }}>{u.avatar}</div>
+          ))}
+        </div>
+
+        <div style={{ flex: 1 }}/>
+
+        <div style={{
+          width: '100%', display: 'flex', flexDirection: 'column', gap: 10,
+          transform: show ? 'translateY(0)' : 'translateY(30px)',
+          opacity: show ? 1 : 0,
+          transition: 'all 0.5s 0.5s',
+        }}>
+          <GradientButton variant="flame" onClick={onOpen}>
+            Watch now on {movie.platform}
+          </GradientButton>
+          <GradientButton variant="ghost" onClick={onKeep}>
+            Keep swiping
+          </GradientButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Filters bottom sheet
+function FiltersSheet({ filters, setFilters, onClose }) {
+  const [draft, setDraft] = React.useState(filters);
+  const apply = () => { setFilters(draft); onClose(); };
+  const types = ['All', 'Movie', 'Series'];
+  const allGenres = ['Action','Comedy','Romance','Drama','Thriller','Horror','Sci-Fi','Fantasy','Crime','Mystery'];
+  const allPlatforms = ['Netflix','Prime','HBO','Apple TV','Shudder'];
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 50 }}>
+      <div onClick={onClose} style={{
+        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(4px)',
+        animation: 'fp-fade-in 0.2s ease-out',
+      }}/>
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        background: 'linear-gradient(180deg, #1A0F2E 0%, #0B0618 100%)',
+        borderTopLeftRadius: 32, borderTopRightRadius: 32,
+        border: '1px solid rgba(255,255,255,0.08)',
+        padding: '14px 22px 28px',
+        maxHeight: '88%', overflowY: 'auto',
+        animation: 'fp-slide-up 0.3s cubic-bezier(.2,.8,.3,1)',
+      }}>
+        <div style={{
+          width: 40, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.2)',
+          margin: '0 auto 16px',
+        }}/>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div style={{
+            fontFamily: '"Space Grotesk"', fontSize: 22, fontWeight: 800, color: FP.text,
+          }}>Fine-tune the queue</div>
+          <button onClick={() => setDraft({ type: 'All', genres: [], platforms: [], yearRange: [1990, 2026] })}
+            style={{ background: 'transparent', border: 'none', color: FP.flameSolid, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+            Reset
+          </button>
+        </div>
+
+        <Section title="Type">
+          <div style={{ display: 'flex', gap: 8 }}>
+            {types.map(t => (
+              <button key={t} onClick={() => setDraft({ ...draft, type: t })} style={{
+                flex: 1, height: 44, borderRadius: 14,
+                border: 'none',
+                background: draft.type === t ? FP.flame : 'rgba(255,255,255,0.05)',
+                color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+                boxShadow: draft.type === t ? '0 6px 18px rgba(255,59,107,0.3)' : 'none',
+              }}>{t}</button>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Genre">
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {allGenres.map(g => (
+              <Chip key={g} active={draft.genres.includes(g)}
+                onClick={() => setDraft({
+                  ...draft,
+                  genres: draft.genres.includes(g)
+                    ? draft.genres.filter(x => x !== g)
+                    : [...draft.genres, g],
+                })}>{g}</Chip>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Streaming platform">
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {allPlatforms.map(p => (
+              <Chip key={p} active={draft.platforms.includes(p)}
+                onClick={() => setDraft({
+                  ...draft,
+                  platforms: draft.platforms.includes(p)
+                    ? draft.platforms.filter(x => x !== p)
+                    : [...draft.platforms, p],
+                })}>{p}</Chip>
+            ))}
+          </div>
+        </Section>
+
+        <Section title={`Release year · ${draft.yearRange[0]}–${draft.yearRange[1]}`}>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <input type="range" min="1990" max="2026" value={draft.yearRange[0]}
+              onChange={(e) => setDraft({ ...draft, yearRange: [Math.min(+e.target.value, draft.yearRange[1]), draft.yearRange[1]] })}
+              style={{ flex: 1, accentColor: '#FF3B6B' }}/>
+            <input type="range" min="1990" max="2026" value={draft.yearRange[1]}
+              onChange={(e) => setDraft({ ...draft, yearRange: [draft.yearRange[0], Math.max(+e.target.value, draft.yearRange[0])] })}
+              style={{ flex: 1, accentColor: '#FF3B6B' }}/>
+          </div>
+        </Section>
+
+        <GradientButton variant="flame" onClick={apply} style={{ marginTop: 10 }}>
+          Apply filters
+        </GradientButton>
+      </div>
+      <style>{`
+        @keyframes fp-slide-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes fp-fade-in { from { opacity: 0; } to { opacity: 1; } }
+      `}</style>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{
+        fontSize: 12, fontWeight: 700, color: FP.textDim,
+        letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10,
+      }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+// Match History
+function HistoryScreen({ onBack, matches, onToggleWatched, onRemove }) {
+  const [tab, setTab] = React.useState('all');
+  const filtered = tab === 'all' ? matches : matches.filter(m => m.watched);
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
+      <AmbientBackdrop hue={260}/>
+      <div style={{ position: 'relative', zIndex: 2, padding: '16px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <IconButton onClick={onBack} size={40}>
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M9 2L3 7l6 5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </IconButton>
+        <div style={{ fontSize: 13, fontWeight: 600, color: FP.textDim }}>Match history</div>
+        <div style={{ width: 40 }}/>
+      </div>
+      <div style={{ position: 'relative', zIndex: 2, padding: '20px 24px 0' }}>
+        <h1 style={{
+          fontFamily: '"Space Grotesk"', fontSize: 30, fontWeight: 800,
+          color: FP.text, margin: 0, letterSpacing: -0.8,
+        }}>Your matches</h1>
+        <div style={{ fontSize: 14, color: FP.textDim, marginTop: 6 }}>
+          {matches.length} titles you and your crew agreed on.
+        </div>
+        <div style={{
+          marginTop: 16, padding: 4, borderRadius: 14,
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          display: 'flex', gap: 4,
+        }}>
+          {[['all','All'],['watched','Watched']].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{
+              flex: 1, height: 36, borderRadius: 10,
+              background: tab === k ? FP.flame : 'transparent', border: 'none',
+              color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+            }}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ position: 'relative', zIndex: 2, flex: 1, overflowY: 'auto', padding: '18px 24px 40px' }}>
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: FP.textDim }}>
+            No matches yet — start swiping!
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {filtered.map(m => (
+              <div key={m.id} style={{
+                display: 'flex', gap: 14, padding: 10,
+                borderRadius: 18,
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}>
+                <div style={{
+                  width: 72, height: 100, borderRadius: 12, overflow: 'hidden', position: 'relative', flexShrink: 0,
+                }}>
+                  <Poster movie={m} showBadge={false}/>
+                </div>
+                <div style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
+                  <div style={{ fontFamily: '"Space Grotesk"', fontSize: 16, fontWeight: 700, color: FP.text }}>{m.title}</div>
+                  <div style={{ fontSize: 12, color: FP.textDim, marginTop: 3 }}>
+                    {m.year} · {m.genres[0]} · {m.platform}
+                  </div>
+                  <div style={{ fontSize: 11, color: FP.textMuted, marginTop: 4 }}>
+                    Matched {m.matchedAt || '2h ago'}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button onClick={() => onToggleWatched(m.id)} style={{
+                      padding: '6px 10px', borderRadius: 999,
+                      background: m.watched ? 'rgba(78,255,214,0.12)' : 'rgba(255,255,255,0.06)',
+                      border: `1px solid ${m.watched ? 'rgba(78,255,214,0.35)' : 'rgba(255,255,255,0.1)'}`,
+                      color: m.watched ? '#4EFFD6' : FP.textDim,
+                      fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                    }}>
+                      {m.watched ? '✓ Watched' : 'Mark watched'}
+                    </button>
+                    <button onClick={() => onRemove(m.id)} style={{
+                      padding: '6px 10px', borderRadius: 999,
+                      background: 'transparent',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      color: FP.textMuted, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    }}>Remove</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProfileScreen({ onBack, user, onSignOut }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
+      <AmbientBackdrop hue={290}/>
+      <div style={{ position: 'relative', zIndex: 2, padding: '16px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <IconButton onClick={onBack} size={40}>
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+            <path d="M9 2L3 7l6 5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </IconButton>
+        <div style={{ fontSize: 13, fontWeight: 600, color: FP.textDim }}>Profile</div>
+        <div style={{ width: 40 }}/>
+      </div>
+      <div style={{ position: 'relative', zIndex: 2, padding: '24px', flex: 1 }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <div style={{
+            width: 92, height: 92, borderRadius: 999,
+            background: 'linear-gradient(135deg, #FF6B4A, #9B3BFF)',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: '"Space Grotesk"', fontSize: 34, fontWeight: 800, color: '#fff',
+            boxShadow: '0 12px 30px rgba(255,59,107,0.35)',
+          }}>{user.avatar}</div>
+          <div style={{
+            fontFamily: '"Space Grotesk"', fontSize: 24, fontWeight: 800,
+            color: FP.text, marginTop: 14,
+          }}>{user.name}</div>
+          <div style={{ fontSize: 14, color: FP.textDim }}>{user.email}</div>
+        </div>
+
+        {/* stats */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: 10, marginBottom: 28,
+        }}>
+          {[['47','Matches'], ['12','Watched'], ['6','Rooms']].map(([n, l]) => (
+            <div key={l} style={{
+              padding: '16px 10px', borderRadius: 18,
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              textAlign: 'center',
+            }}>
+              <div style={{
+                fontFamily: '"Space Grotesk"', fontSize: 24, fontWeight: 800,
+                background: FP.flame,
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}>{n}</div>
+              <div style={{ fontSize: 11, color: FP.textDim, marginTop: 2 }}>{l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* settings list */}
+        <div style={{
+          borderRadius: 20, overflow: 'hidden',
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.08)',
+        }}>
+          {[
+            ['Preferred language', 'English'],
+            ['Haptic feedback', 'On'],
+            ['Notifications', 'Matches only'],
+            ['Connected accounts', 'Google'],
+          ].map(([k, v], i, a) => (
+            <div key={k} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '14px 16px',
+              borderBottom: i < a.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+            }}>
+              <span style={{ fontSize: 14, color: FP.text, fontWeight: 500 }}>{k}</span>
+              <span style={{ fontSize: 13, color: FP.textDim }}>{v} ›</span>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={onSignOut} style={{
+          width: '100%', marginTop: 20, height: 52, borderRadius: 999,
+          background: 'transparent', border: '1px solid rgba(255,59,107,0.3)',
+          color: '#FF3B6B', fontWeight: 700, fontSize: 15, cursor: 'pointer',
+        }}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+// Detail sheet - opens on tap of a swipe card
+function DetailSheet({ movie, onClose, onLike, onSkip }) {
+  const [show, setShow] = React.useState(false);
+  React.useEffect(() => {
+    const t = setTimeout(() => setShow(true), 20);
+    return () => clearTimeout(t);
+  }, []);
+  const close = () => {
+    setShow(false);
+    setTimeout(onClose, 220);
+  };
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 60 }}>
+      {/* scrim */}
+      <div onClick={close} style={{
+        position: 'absolute', inset: 0,
+        background: 'rgba(0,0,0,0.65)',
+        backdropFilter: 'blur(6px)',
+        WebkitBackdropFilter: 'blur(6px)',
+        opacity: show ? 1 : 0,
+        transition: 'opacity 0.22s',
+      }}/>
+      {/* sheet */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        borderTopLeftRadius: 32, borderTopRightRadius: 32,
+        background: 'linear-gradient(180deg, #1A0F2E 0%, #0B0618 100%)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        maxHeight: '92%',
+        transform: show ? 'translateY(0)' : 'translateY(100%)',
+        transition: 'transform 0.32s cubic-bezier(.2,.8,.3,1)',
+        display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
+      }}>
+        {/* hero poster */}
+        <div style={{ position: 'relative', height: 280, flexShrink: 0 }}>
+          <Poster movie={movie} showBadge={false}/>
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(180deg, transparent 30%, rgba(11,6,24,0.95) 100%)',
+          }}/>
+          {/* grabber */}
+          <div style={{
+            position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+            width: 44, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.35)',
+          }}/>
+          {/* close */}
+          <button onClick={close} style={{
+            position: 'absolute', top: 16, right: 16,
+            width: 34, height: 34, borderRadius: 999,
+            background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)',
+            backdropFilter: 'blur(10px)',
+            color: '#fff', cursor: 'pointer', padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="#fff" strokeWidth="2" strokeLinecap="round"/></svg>
+          </button>
+          {/* type + rating */}
+          <div style={{ position: 'absolute', top: 16, left: 16, display: 'flex', gap: 6 }}>
+            <span style={{
+              padding: '4px 9px', borderRadius: 999,
+              fontSize: 10, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase',
+              background: 'rgba(0,0,0,0.55)', color: '#fff',
+              border: '0.5px solid rgba(255,255,255,0.25)',
+              backdropFilter: 'blur(8px)',
+            }}>{movie.type}</span>
+            <span style={{
+              padding: '4px 9px', borderRadius: 999,
+              fontSize: 11, fontWeight: 700,
+              background: 'rgba(0,0,0,0.55)', color: '#FFD166',
+              border: '0.5px solid rgba(255,255,255,0.25)',
+              backdropFilter: 'blur(8px)',
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+            }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="#FFD166"><path d="M12 2l2.9 6.9 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.5l7.1-.6z"/></svg>
+              {movie.rating.toFixed(1)}
+            </span>
+          </div>
+          {/* title overlay */}
+          <div style={{ position: 'absolute', left: 22, right: 22, bottom: 16 }}>
+            <div style={{
+              fontFamily: '"Space Grotesk"', fontSize: 30, fontWeight: 800,
+              color: '#fff', letterSpacing: -0.8, lineHeight: 1.05,
+            }}>{movie.title}</div>
+            <div style={{
+              display: 'flex', gap: 10, alignItems: 'center', marginTop: 6,
+              color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: 600,
+            }}>
+              <span>{movie.year}</span>
+              <span style={{ width: 3, height: 3, borderRadius: 999, background: 'rgba(255,255,255,0.5)' }}/>
+              <span>{movie.runtime}</span>
+              <span style={{ width: 3, height: 3, borderRadius: 999, background: 'rgba(255,255,255,0.5)' }}/>
+              <span>{movie.platform}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* scrollable body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '18px 22px 16px' }}>
+          {/* genre chips */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {movie.genres.map(g => (
+              <span key={g} style={{
+                fontSize: 11, fontWeight: 700, letterSpacing: 0.6,
+                padding: '6px 11px', borderRadius: 999,
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: FP.textDim,
+              }}>{g}</span>
+            ))}
+          </div>
+
+          {/* synopsis */}
+          <div style={{
+            fontSize: 12, fontWeight: 700, color: FP.textDim,
+            letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8,
+          }}>Synopsis</div>
+          <div style={{
+            fontSize: 14, color: FP.text, lineHeight: 1.55, marginBottom: 20,
+          }}>{movie.overview}</div>
+
+          {/* meta grid */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20,
+          }}>
+            {[
+              ['Platform', movie.platform],
+              ['Runtime', movie.runtime],
+              ['Rating', `${movie.rating.toFixed(1)} / 10`],
+              ['Released', movie.year],
+            ].map(([k, v]) => (
+              <div key={k} style={{
+                padding: '12px 14px', borderRadius: 14,
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}>
+                <div style={{ fontSize: 10, color: FP.textMuted, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 3 }}>{k}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: FP.text }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* actions */}
+        <div style={{
+          padding: '12px 22px 20px',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          display: 'flex', gap: 10,
+        }}>
+          <button onClick={onSkip} style={{
+            width: 56, height: 56, borderRadius: 999,
+            background: 'rgba(255,255,255,0.05)',
+            border: '1.5px solid rgba(255,255,255,0.12)',
+            color: '#fff', cursor: 'pointer', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M6 6l12 12M6 18L18 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+          <GradientButton variant="flame" onClick={onLike} style={{ flex: 1, height: 56 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff" style={{ marginRight: 6 }}>
+              <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z"/>
+            </svg>
+            Like this pick
+          </GradientButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { SwipeScreen, MatchScreen, FiltersSheet, HistoryScreen, ProfileScreen, DetailSheet });

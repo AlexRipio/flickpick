@@ -1,0 +1,134 @@
+[
+  {
+    "uuid": "665a245e-a4fe-4d67-97ae-0504e29bad71",
+    "rel": "665a245e-a4fe-4d67-97ae-0504e29bad71",
+    "size": 115238,
+    "mime": "image/webp"
+  },
+  {
+    "uuid": "b03a0d7b-ab7c-4ccc-bc3c-ccb631016dda",
+    "rel": "b03a0d7b-ab7c-4ccc-bc3c-ccb631016dda",
+    "size": 109931,
+    "mime": "text/javascript"
+  },
+  {
+    "uuid": "57f4541b-2c4b-49ac-915c-24b473263e21",
+    "rel": "57f4541b-2c4b-49ac-915c-24b473263e21",
+    "size": 1080227,
+    "mime": "text/javascript"
+  },
+  {
+    "uuid": "7f7022ff-d339-4fd7-89fc-8d4ddd3aa901",
+    "rel": "7f7022ff-d339-4fd7-89fc-8d4ddd3aa901",
+    "size": 15755,
+    "mime": "text/jsx"
+  },
+  {
+    "uuid": "1019bc81-595d-4547-8de0-52ee7d28995e",
+    "rel": "1019bc81-595d-4547-8de0-52ee7d28995e",
+    "size": 8063,
+    "mime": "application/javascript"
+  },
+  {
+    "uuid": "347c1784-297a-4a5e-b1b7-4e000047ed71",
+    "rel": "347c1784-297a-4a5e-b1b7-4e000047ed71",
+    "size": 3392,
+    "mime": "application/javascript"
+  },
+  {
+    "uuid": "f534e02b-eb5f-4cb3-bc41-e800aeb7b474",
+    "rel": "f534e02b-eb5f-4cb3-bc41-e800aeb7b474",
+    "size": 8674,
+    "mime": "application/javascript"
+  },
+  {
+    "uuid": "d241b439-39b0-4ac3-aabe-0fa1f32d119e",
+    "rel": "d241b439-39b0-4ac3-aabe-0fa1f32d119e",
+    "size": 4630,
+    "mime": "application/javascript"
+  },
+  {
+    "uuid": "4034ed3b-6a6b-4611-9e51-96f7b8025354",
+    "rel": "4034ed3b-6a6b-4611-9e51-96f7b8025354",
+    "size": 3544,
+    "mime": "application/javascript"
+  },
+  {
+    "uuid": "acddfa31-80a9-43fc-8684-3d54bc16aee5",
+    "rel": "acddfa31-80a9-43fc-8684-3d54bc16aee5",
+    "size": 17776,
+    "mime": "application/javascript"
+  },
+  {
+    "uuid": "e3998cdf-0f15-4508-abb2-56fcef9c8da5",
+    "rel": "e3998cdf-0f15-4508-abb2-56fcef9c8da5",
+    "size": 39466,
+    "mime": "application/javascript"
+  },
+  {
+    "uuid": "f8982dd0-bd6b-45f7-b33a-171af55fe405",
+    "rel": "f8982dd0-bd6b-45f7-b33a-171af55fe405",
+    "size": 3137752,
+    "mime": "text/javascript"
+  },
+  {
+    "uuid": "5227a3f4-954e-447d-b9f7-2f731d2efad7",
+    "rel": "5227a3f4-954e-447d-b9f7-2f731d2efad7",
+    "size": 25960,
+    "mime": "font/woff2"
+  },
+  {
+    "uuid": "d1e766fd-1fd7-4094-be2c-a5cc7a3aea85",
+    "rel": "d1e766fd-1fd7-4094-be2c-a5cc7a3aea85",
+    "size": 18748,
+    "mime": "font/woff2"
+  },
+  {
+    "uuid": "b9f20bf9-9014-4f0e-96eb-f35f3ae15ca1",
+    "rel": "b9f20bf9-9014-4f0e-96eb-f35f3ae15ca1",
+    "size": 11232,
+    "mime": "font/woff2"
+  },
+  {
+    "uuid": "667bd973-b1d6-4d45-958c-abe2f673bc1d",
+    "rel": "667bd973-b1d6-4d45-958c-abe2f673bc1d",
+    "size": 18996,
+    "mime": "font/woff2"
+  },
+  {
+    "uuid": "6fb8b245-7825-47ec-82d9-ebe0264ec990",
+    "rel": "6fb8b245-7825-47ec-82d9-ebe0264ec990",
+    "size": 10252,
+    "mime": "font/woff2"
+  },
+  {
+    "uuid": "e1e09e20-efd1-49db-9aa5-17071ac6bb0e",
+    "rel": "e1e09e20-efd1-49db-9aa5-17071ac6bb0e",
+    "size": 85068,
+    "mime": "font/woff2"
+  },
+  {
+    "uuid": "0df54355-eb7e-4108-b10a-b0827e5cb2bb",
+    "rel": "0df54355-eb7e-4108-b10a-b0827e5cb2bb",
+    "size": 48256,
+    "mime": "font/woff2"
+  },
+  {
+    "uuid": "991a82c4-f331-40e1-9ff1-5a4a93923727",
+    "rel": "991a82c4-f331-40e1-9ff1-5a4a93923727",
+    "size": 6712,
+    "mime": "font/woff2"
+  },
+  {
+    "uuid": "b9086345-4b13-4466-9f59-6277c4a7da7c",
+    "rel": "b9086345-4b13-4466-9f59-6277c4a7da7c",
+    "size": 18940,
+    "mime": "font/woff2"
+  },
+  {
+    "uuid": "80e463f2-ca67-4724-9c9a-4f474b62614d",
+    "rel": "80e463f2-ca67-4724-9c9a-4f474b62614d",
+    "size": 22288,
+    "mime": "font/woff2"
+  }
+]

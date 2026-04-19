@@ -1,0 +1,19 @@
+// Mock movie/series catalog using picsum for cinematic poster placeholders
+// Seeds chosen to yield moody colors consistent with the FlickPick aesthetic.
+
+const MOVIES = [
+  { id: 'm1',  title: 'Neon Pilgrim',          year: 2024, type: 'Movie',  genres: ['Sci-Fi','Thriller'], rating: 8.2, runtime: '1h 58m', platform: 'Netflix',        seed: 1011, hue: 280, overview: 'A courier crosses a drowned megacity to deliver a message that rewrites the rules of time.' },
+  { id: 'm2',  title: 'Midnight Orchard',      year: 2023, type: 'Movie',  genres: ['Romance','Drama'],   rating: 7.6, runtime: '2h 04m', platform: 'Prime',          seed: 1025, hue: 320, overview: 'Two strangers meet in an abandoned orchard and confuse love for memory.' },
+  { id: 'm3',  title: 'The Velvet Signal',     year: 2025, type: 'Series', genres: ['Mystery','Crime'],   rating: 8.9, runtime: '6 eps',  platform: 'HBO',            seed: 1042, hue: 260, overview: 'A radio engineer intercepts confessions from a town that isn\u2019t on any map.' },
+  { id: 'm4',  title: 'Paperweight Heart',     year: 2022, type: 'Movie',  genres: ['Comedy','Romance'],  rating: 7.2, runtime: '1h 42m', platform: 'Netflix',        seed: 1059, hue: 20,  overview: 'A lonely notary falls for the ghost of a screenwriter with unfinished business.' },
+  { id: 'm5',  title: 'Hollow Dynasty',        year: 2024, type: 'Series', genres: ['Fantasy','Action'],  rating: 9.1, runtime: '8 eps',  platform: 'Apple TV',       seed: 1068, hue: 15,  overview: 'Three heirs, one throne carved from a burning star. Only loyalty survives the fire.' },
+  { id: 'm6',  title: 'Static Bloom',          year: 2023, type: 'Movie',  genres: ['Horror'],            rating: 7.8, runtime: '1h 49m', platform: 'Shudder',        seed: 1074, hue: 140, overview: 'A seaside family receives television broadcasts from their own future.' },
+  { id: 'm7',  title: 'Last Taxi to Marbella', year: 2021, type: 'Movie',  genres: ['Drama','Comedy'],    rating: 7.1, runtime: '1h 36m', platform: 'Prime',          seed: 1081, hue: 35,  overview: 'Six passengers. One driver. A coastal night where everyone lies beautifully.' },
+  { id: 'm8',  title: 'Citrine',               year: 2025, type: 'Series', genres: ['Sci-Fi','Drama'],    rating: 8.5, runtime: '10 eps', platform: 'Netflix',        seed: 1084, hue: 50,  overview: 'A mining colony on a yellow moon decides it prefers to be forgotten.' },
+  { id: 'm9',  title: 'Glass Mercy',           year: 2024, type: 'Movie',  genres: ['Thriller','Crime'],  rating: 8.0, runtime: '2h 11m', platform: 'HBO',            seed: 1003, hue: 220, overview: 'An ex-judge is blackmailed by a confession she has not yet made.' },
+  { id: 'm10', title: 'Paper Tigers',          year: 2023, type: 'Series', genres: ['Action','Comedy'],   rating: 7.9, runtime: '6 eps',  platform: 'Apple TV',       seed: 1035, hue: 5,   overview: 'Three retired henchmen accidentally inherit the syndicate that fired them.' },
+  { id: 'm11', title: 'Afterlight',            year: 2022, type: 'Movie',  genres: ['Drama','Romance'],   rating: 7.4, runtime: '1h 54m', platform: 'Prime',          seed: 1055, hue: 300, overview: 'A photographer chases the hour when light behaves like a promise.' },
+  { id: 'm12', title: 'Slow Wolves',           year: 2025, type: 'Series', genres: ['Crime','Drama'],     rating: 8.7, runtime: '8 eps',  platform: 'Netflix',        seed: 1062, hue: 240, overview: 'A small-town sheriff keeps finding his own name carved into crime scenes.' },
+];
+
+window.FP_MOVIES = MOVIES;

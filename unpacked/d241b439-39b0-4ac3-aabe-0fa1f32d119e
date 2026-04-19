@@ -1,0 +1,116 @@
+// Poster — a generative cinematic placeholder keyed by seed + hue.
+// NO real movie posters; everything is drawn inline so the prototype is self-contained.
+
+function Poster({ movie, style = {}, showBadge = true }) {
+  const { title, year, type, genres, hue, seed, rating } = movie;
+
+  // hue-driven gradient
+  const bg = `
+    radial-gradient(120% 80% at 20% 10%, oklch(0.42 0.22 ${hue}) 0%, transparent 60%),
+    radial-gradient(100% 70% at 85% 90%, oklch(0.32 0.20 ${(hue + 40) % 360}) 0%, transparent 55%),
+    linear-gradient(180deg, oklch(0.18 0.10 ${hue}) 0%, oklch(0.08 0.05 ${hue}) 100%)
+  `;
+
+  // deterministic pseudo-random from seed
+  const rng = (n) => {
+    const x = Math.sin(seed * 9301 + n * 49297) * 233280;
+    return x - Math.floor(x);
+  };
+
+  // generate scratches + film grain particles
+  const grains = Array.from({ length: 40 }, (_, i) => ({
+    x: rng(i) * 100, y: rng(i + 100) * 100,
+    r: rng(i + 200) * 1.8 + 0.3,
+    o: rng(i + 300) * 0.4 + 0.1,
+  }));
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, borderRadius: 'inherit',
+      background: bg, overflow: 'hidden',
+      ...style,
+    }}>
+      {/* film grain */}
+      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', mixBlendMode: 'screen', opacity: 0.5 }}>
+        {grains.map((g, i) => (
+          <circle key={i} cx={`${g.x}%`} cy={`${g.y}%`} r={g.r} fill="#fff" opacity={g.o} />
+        ))}
+      </svg>
+
+      {/* abstract subject shape — a large silhouette hinting at a figure or object */}
+      <svg viewBox="0 0 400 600" preserveAspectRatio="xMidYMid slice"
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+        <defs>
+          <linearGradient id={`g-${seed}`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"  stopColor={`oklch(0.75 0.18 ${hue})`} stopOpacity="0.9"/>
+            <stop offset="100%" stopColor={`oklch(0.35 0.22 ${(hue + 60) % 360})`} stopOpacity="0.4"/>
+          </linearGradient>
+          <linearGradient id={`g2-${seed}`} x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%"  stopColor={`oklch(0.22 0.08 ${hue})`} stopOpacity="1"/>
+            <stop offset="100%" stopColor="transparent"/>
+          </linearGradient>
+        </defs>
+        {/* background horizon lines */}
+        {Array.from({ length: 7 }).map((_, i) => (
+          <line key={i}
+            x1="0" y1={380 + i * 18}
+            x2="400" y2={380 + i * 18 + (rng(i) - 0.5) * 20}
+            stroke="#fff" strokeOpacity={0.04 + rng(i + 5) * 0.08}
+            strokeWidth="1"/>
+        ))}
+        {/* subject blob */}
+        <ellipse cx={200 + (rng(1) - 0.5) * 80} cy={240} rx={120} ry={170}
+          fill={`url(#g-${seed})`} opacity="0.75"/>
+        {/* secondary shape */}
+        <path d={`M ${60 + rng(2) * 80} ${500 + rng(3) * 40}
+                   Q 200 ${360 + rng(4) * 80}, ${340 - rng(5) * 60} ${500 + rng(6) * 40}
+                   L ${340} 600 L 60 600 Z`}
+          fill={`url(#g2-${seed})`}/>
+        {/* star speck */}
+        {Array.from({ length: 8 }).map((_, i) => (
+          <circle key={i}
+            cx={rng(i + 10) * 400} cy={rng(i + 30) * 300}
+            r={rng(i + 50) * 1.4 + 0.4}
+            fill="#fff" opacity={0.6 + rng(i + 70) * 0.4}/>
+        ))}
+      </svg>
+
+      {/* vignette */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'radial-gradient(100% 100% at 50% 50%, transparent 50%, rgba(0,0,0,0.55) 100%)',
+      }}/>
+
+      {/* type badge */}
+      {showBadge && (
+        <div style={{
+          position: 'absolute', top: 12, left: 12,
+          padding: '4px 9px', borderRadius: 999,
+          fontSize: 10, fontWeight: 700, letterSpacing: 1.2,
+          textTransform: 'uppercase',
+          background: 'rgba(0,0,0,0.55)', color: '#fff',
+          backdropFilter: 'blur(8px)',
+          border: '0.5px solid rgba(255,255,255,0.25)',
+        }}>{type}</div>
+      )}
+      {showBadge && (
+        <div style={{
+          position: 'absolute', top: 12, right: 12,
+          padding: '4px 9px', borderRadius: 999,
+          fontSize: 11, fontWeight: 700,
+          background: 'rgba(0,0,0,0.55)', color: '#FFD166',
+          backdropFilter: 'blur(8px)',
+          border: '0.5px solid rgba(255,255,255,0.25)',
+          display: 'flex', alignItems: 'center', gap: 4,
+        }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="#FFD166">
+            <path d="M12 2l2.9 6.9 7.1.6-5.4 4.7 1.6 7-6.2-3.7-6.2 3.7 1.6-7L2 9.5l7.1-.6z"/>
+          </svg>
+          {rating.toFixed(1)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+window.Poster = Poster;
