@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { QRCodeSVG } from 'qrcode.react';
 import { AmbientBackdrop, Avatar, BackButton, GradientButton } from '@/components/fp/primitives';
 import { FP, memberColor } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
-import { getRoom, startRoom, subscribe, hydrateRoomById } from '@/lib/roomStore';
+import { getRoom, startRoom, closeRoom, subscribe, hydrateRoomById } from '@/lib/roomStore';
 
 const RoomLobby = () => {
   const { id: roomId } = useParams();
@@ -13,24 +14,16 @@ const RoomLobby = () => {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const unsub = subscribe(() => {
-      const r = getRoom(roomId);
+    const handleRoom = (r) => {
+      if (!r) return;
       setRoom(r);
-      if (r?.status === 'live') navigate(`/room/${roomId}`, { replace: true });
-    });
-    const onStorage = () => {
-      const r = getRoom(roomId);
-      setRoom(r);
-      if (r?.status === 'live') navigate(`/room/${roomId}`, { replace: true });
+      if (r.status === 'live') navigate(`/room/${roomId}`, { replace: true });
+      if (r.status === 'ended') navigate('/home', { replace: true });
     };
+    const unsub = subscribe(() => handleRoom(getRoom(roomId)));
+    const onStorage = () => handleRoom(getRoom(roomId));
     window.addEventListener('storage', onStorage);
-    // Hydrate from cloud if the room isn't here yet (e.g. joined by link on a fresh device).
-    hydrateRoomById(roomId).then(r => {
-      if (r) {
-        setRoom(r);
-        if (r.status === 'live') navigate(`/room/${roomId}`, { replace: true });
-      }
-    });
+    hydrateRoomById(roomId).then(r => { if (r) handleRoom(r); });
     return () => { unsub?.(); window.removeEventListener('storage', onStorage); };
   }, [roomId]);
 
@@ -44,10 +37,10 @@ const RoomLobby = () => {
   }
 
   const isHost = profile?.id === room.ownerId;
+  const joinLink = `${window.location.origin}/g/${room.joinCode}`;
 
   const copy = () => {
-    const link = `${window.location.origin}/g/${room.joinCode}`;
-    navigator.clipboard?.writeText(link).catch(() => {});
+    navigator.clipboard?.writeText(joinLink).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 1600);
   };
@@ -55,6 +48,13 @@ const RoomLobby = () => {
   const start = () => {
     startRoom(roomId);
     navigate(`/room/${roomId}`, { replace: true });
+  };
+
+  const handleClose = () => {
+    if (window.confirm('¿Cerrar la sala para todos los participantes?')) {
+      closeRoom(roomId);
+      navigate('/home', { replace: true });
+    }
   };
 
   return (
@@ -68,7 +68,13 @@ const RoomLobby = () => {
       }}>
         <BackButton onClick={() => navigate('/home')}/>
         <div style={{ fontSize: 13, fontWeight: 600, color: FP.textDim }}>Sala de espera</div>
-        <div style={{ width: 42 }}/>
+        {isHost ? (
+          <button onClick={handleClose} style={{
+            background: 'rgba(255,59,107,0.12)', border: '1px solid rgba(255,59,107,0.3)',
+            borderRadius: 999, padding: '6px 14px', color: '#FF3B6B',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>Cerrar sala</button>
+        ) : <div style={{ width: 42 }}/>}
       </div>
 
       <div style={{
@@ -92,6 +98,16 @@ const RoomLobby = () => {
             WebkitTextFillColor: 'transparent',
             lineHeight: 1,
           }}>{room.joinCode}</div>
+          {/* QR Code */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16, marginTop: 4 }}>
+            <div style={{
+              background: '#fff', borderRadius: 16, padding: 12,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            }}>
+              <QRCodeSVG value={joinLink} size={120} bgColor="#ffffff" fgColor="#0A070F" level="M"/>
+            </div>
+          </div>
+
           <button onClick={copy} style={{
             marginTop: 16,
             padding: '10px 18px', borderRadius: 999,
@@ -113,7 +129,7 @@ const RoomLobby = () => {
             )}
           </button>
           <div style={{ marginTop: 12, fontSize: 11, color: FP.textMuted, wordBreak: 'break-all' }}>
-            {window.location.origin}/g/{room.joinCode}
+            {joinLink}
           </div>
         </div>
 

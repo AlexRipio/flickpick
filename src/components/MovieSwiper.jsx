@@ -4,7 +4,7 @@ import { AmbientBackdrop, Avatar, BackButton, IconButton } from '@/components/fp
 import { Poster } from '@/components/fp/Poster';
 import { FP, memberColor } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
-import { addMember, getMemberVotedIds, getRoom, recordVote, startRoom, subscribe, hydrateRoomById } from '@/lib/roomStore';
+import { addMember, getMemberVotedIds, getRoom, recordVote, startRoom, closeRoom, subscribe, hydrateRoomById } from '@/lib/roomStore';
 import { fetchPoolForRoom, getSimilar } from '@/lib/tmdb';
 import { blendTastes, rankPool, topGenres } from '@/lib/matchmaking';
 import DetailSheet from '@/components/DetailSheet';
@@ -126,13 +126,11 @@ const MovieSwiper = () => {
   const swipe = (dir, movie) => {
     if (!movie || !me || exitDir) return;
     setExitDir(dir);
-    // record vote
+    let madeMatchMovie = null;
     try {
       const { madeMatch, room: updated } = recordVote(roomId, me.id, movie, dir === 'right' ? 'like' : 'skip');
       setRoom(updated);
-      if (madeMatch) {
-        setMatchMovie(movie);
-      }
+      if (madeMatch) madeMatchMovie = movie;
       votesSinceRerank.current += 1;
       if (votesSinceRerank.current >= RERANK_EVERY) {
         votesSinceRerank.current = 0;
@@ -141,7 +139,11 @@ const MovieSwiper = () => {
         setRanked(prev => rankPool(prev.slice(idx + 1), updatedTaste, updatedVoted));
         setIdx(0);
         if (dir === 'right') expandWithSimilar();
-        setTimeout(() => { setExitDir(null); setDragOffset({ x: 0, y: 0 }); }, 280);
+        setTimeout(() => {
+          setExitDir(null);
+          setDragOffset({ x: 0, y: 0 });
+          if (madeMatchMovie) setMatchMovie(madeMatchMovie);
+        }, 440);
         return;
       }
     } catch {}
@@ -149,7 +151,8 @@ const MovieSwiper = () => {
       setIdx(i => i + 1);
       setExitDir(null);
       setDragOffset({ x: 0, y: 0 });
-    }, 280);
+      if (madeMatchMovie) setMatchMovie(madeMatchMovie);
+    }, 440);
   };
 
   const handlePointerDown = (e) => {
@@ -225,11 +228,20 @@ const MovieSwiper = () => {
             ))}
           </div>
         </div>
-        <IconButton onClick={() => navigate(`/room/${roomId}/matches`)} size={40} ariaLabel="Matches">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" stroke="#fff" strokeWidth="2" fill="none"/>
-          </svg>
-        </IconButton>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {isHost && (
+            <IconButton onClick={() => { if (window.confirm('¿Cerrar la sala para todos?')) { closeRoom(roomId); navigate('/home', { replace: true }); } }} size={36} ariaLabel="Cerrar sala">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M18 6L6 18M6 6l12 12" stroke="#FF3B6B" strokeWidth="2.5" strokeLinecap="round"/>
+              </svg>
+            </IconButton>
+          )}
+          <IconButton onClick={() => navigate(`/room/${roomId}/matches`)} size={40} ariaLabel="Matches">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" stroke="#fff" strokeWidth="2" fill="none"/>
+            </svg>
+          </IconButton>
+        </div>
       </div>
 
       {/* progress */}
@@ -285,25 +297,28 @@ const MovieSwiper = () => {
           <>
             {after && (
               <SwipeCard movie={after} style={{
-                transform: 'scale(0.88) translateY(24px)', opacity: 0.5, zIndex: 1,
+                transform: 'scale(0.88) translateY(24px)', opacity: 0.45, zIndex: 1,
+                transition: exitDir ? 'transform 0.44s cubic-bezier(0.2,0.8,0.3,1), opacity 0.44s' : 'none',
               }} interactive={false}/>
             )}
             {next && (
               <SwipeCard movie={next} style={{
-                transform: 'scale(0.94) translateY(12px)', opacity: 0.85, zIndex: 2,
+                transform: exitDir ? 'scale(1) translateY(0)' : 'scale(0.94) translateY(12px)',
+                opacity: exitDir ? 1 : 0.85, zIndex: 2,
+                transition: exitDir ? 'transform 0.44s cubic-bezier(0.2,0.8,0.3,1), opacity 0.3s' : 'none',
               }} interactive={false}/>
             )}
             <SwipeCard
               movie={current}
               style={{
                 zIndex: 3,
-                transform: exitDir
-                  ? `translate(${exitDir === 'right' ? 600 : -600}px, ${dragOffset.y}px) rotate(${exitDir === 'right' ? 30 : -30}deg)`
-                  : `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px) rotate(${rotate}deg)`,
-                transition: dragging ? 'none' : 'transform 0.32s cubic-bezier(.2,.8,.3,1.2)',
+                transform: exitDir ? undefined : `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px) rotate(${rotate}deg)`,
+                transition: dragging ? 'none' : exitDir ? undefined : 'transform 0.18s ease-out',
+                className: exitDir ? (exitDir === 'right' ? 'fp-exit-right' : 'fp-exit-left') : undefined,
                 cursor: dragging ? 'grabbing' : 'grab',
                 touchAction: 'none',
               }}
+              exitDir={exitDir}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
@@ -319,29 +334,28 @@ const MovieSwiper = () => {
       {/* action buttons */}
       {!isLoading && current && (
         <div style={{
-          position: 'relative', zIndex: 5, padding: '18px 24px 28px',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16,
+          position: 'relative', zIndex: 5, padding: '18px 24px 32px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20,
           maxWidth: 520, width: '100%', margin: '0 auto',
         }}>
-          <ActionFAB onClick={() => swipe('left', current)} variant="skip" size={56}>
+          {/* Skip */}
+          <ActionFAB onClick={() => swipe('left', current)} variant="skip" size={58}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M6 6l12 12M6 18L18 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/>
+              <path d="M6 6l12 12M6 18L18 6" stroke="#FF3B6B" strokeWidth="2.5" strokeLinecap="round"/>
             </svg>
           </ActionFAB>
-          <ActionFAB onClick={() => navigate(`/room/${roomId}/matches`)} variant="neutral" size={46}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M20.8 11a9 9 0 11-2.9-7.6M21 3v5h-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </ActionFAB>
-          <ActionFAB onClick={() => swipe('right', current)} variant="like" size={68}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+          {/* Like — big center */}
+          <ActionFAB onClick={() => swipe('right', current)} variant="like" size={72}>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
               <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" fill="#fff"/>
             </svg>
           </ActionFAB>
-          <ActionFAB onClick={() => setDetailMovie(current)} variant="boost" size={46}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="9" stroke="#FFB547" strokeWidth="2"/>
-              <path d="M12 8v4M12 16h.01" stroke="#FFB547" strokeWidth="2" strokeLinecap="round"/>
+          {/* Info / detalles */}
+          <ActionFAB onClick={() => setDetailMovie(current)} variant="info" size={58}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M12 21a9 9 0 100-18 9 9 0 000 18z" stroke="#4EFFD6" strokeWidth="2"/>
+              <path d="M12 11v6" stroke="#4EFFD6" strokeWidth="2.5" strokeLinecap="round"/>
+              <circle cx="12" cy="8" r="1.2" fill="#4EFFD6"/>
             </svg>
           </ActionFAB>
         </div>
@@ -368,11 +382,11 @@ const MovieSwiper = () => {
   );
 };
 
-function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = true, ...rest }) {
-  const genres = []; // TMDB has genre_ids but no names without mapping; omit chips here to keep it clean
+function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = true, exitDir, ...rest }) {
   const year = movie?.release_date ? movie.release_date.slice(0, 4) : '';
+  const exitClass = exitDir === 'right' ? 'fp-exit-right' : exitDir === 'left' ? 'fp-exit-left' : '';
   return (
-    <div {...rest} style={{
+    <div {...rest} className={exitClass} style={{
       position: 'absolute', top: 0, left: 22, right: 22, bottom: 0,
       borderRadius: 28, overflow: 'hidden',
       background: '#1a0f2e',
@@ -454,22 +468,19 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
 
 function ActionFAB({ children, onClick, variant, size }) {
   const bgs = {
-    skip:    'linear-gradient(135deg, #2a1f3d, #1a1028)',
+    skip:    'rgba(255,59,107,0.1)',
     like:    FP.flame,
-    neutral: 'rgba(255,255,255,0.06)',
-    boost:   'rgba(255,183,71,0.12)',
+    info:    'rgba(78,255,214,0.1)',
   };
   const borders = {
-    skip:    '1.5px solid rgba(255,255,255,0.1)',
+    skip:    '1.5px solid rgba(255,59,107,0.3)',
     like:    'none',
-    neutral: '1px solid rgba(255,255,255,0.1)',
-    boost:   '1px solid rgba(255,183,71,0.35)',
+    info:    '1.5px solid rgba(78,255,214,0.3)',
   };
   const shadows = {
-    skip:    '0 6px 16px rgba(0,0,0,0.4)',
-    like:    '0 10px 28px rgba(255,59,107,0.45)',
-    neutral: 'none',
-    boost:   '0 4px 12px rgba(255,183,71,0.25)',
+    skip:    '0 6px 20px rgba(255,59,107,0.2)',
+    like:    '0 10px 32px rgba(255,59,107,0.5)',
+    info:    '0 6px 20px rgba(78,255,214,0.15)',
   };
   return (
     <button onClick={onClick} style={{

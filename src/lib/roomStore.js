@@ -79,25 +79,45 @@ export function findRoomByCode(code) {
 }
 
 function saveRoom(room, { skipPush = false } = {}) {
+  const stamped = { ...room, updatedAt: Date.now() };
   const all = readAll();
-  all[room.id] = room;
+  all[stamped.id] = stamped;
   writeAll(all);
   const codes = readCodes();
-  codes[room.joinCode] = room.id;
+  codes[stamped.joinCode] = stamped.id;
   writeCodes(codes);
-  broadcast(room.id);
-  if (!skipPush) pushRoom(room);
-  return room;
+  broadcast(stamped.id);
+  if (!skipPush) pushRoom(stamped);
+  return stamped;
 }
 
-// Remote updates (Supabase Realtime) are mirrored into the local store.
+// Deep-merge two room snapshots: votes union, members union, most-advanced status.
+function mergeRooms(local, remote) {
+  // votes: take union of all member votes
+  const votes = { ...local.votes };
+  for (const [memberId, memberVotes] of Object.entries(remote.votes || {})) {
+    votes[memberId] = { ...(votes[memberId] || {}), ...memberVotes };
+  }
+  // members: prefer remote shape, keep all ids
+  const memberMap = {};
+  for (const m of [...(local.members || []), ...(remote.members || [])]) memberMap[m.id] = m;
+  const members = Object.values(memberMap);
+  // matches: union by movieId
+  const matchMap = {};
+  for (const m of [...(local.matches || []), ...(remote.matches || [])]) matchMap[m.movieId] = m;
+  const matches = Object.values(matchMap);
+  // status: most advanced wins
+  const ord = { lobby: 0, live: 1, ended: 2 };
+  const status = (ord[remote.status] ?? 0) >= (ord[local.status] ?? 0) ? remote.status : local.status;
+  return { ...remote, votes, members, matches, status };
+}
+
+// Remote updates (Supabase Realtime) → deep-merge into local store.
 setOnRemoteUpdate((remote) => {
   if (!remote || !remote.id) return;
   const local = getRoom(remote.id);
-  // Last-write-wins; timestamp cheap collision guard
-  if (!local || (remote.createdAt || 0) >= (local.createdAt || 0)) {
-    saveRoom(remote, { skipPush: true });
-  }
+  const merged = local ? mergeRooms(local, remote) : remote;
+  saveRoom(merged, { skipPush: true });
 });
 
 /** Hydrate a room from the cloud if we don't have it locally. */
@@ -153,6 +173,13 @@ export function startRoom(roomId) {
   const room = getRoom(roomId);
   if (!room) throw new Error("Sala no encontrada");
   room.status = "live";
+  return saveRoom(room);
+}
+
+export function closeRoom(roomId) {
+  const room = getRoom(roomId);
+  if (!room) throw new Error("Sala no encontrada");
+  room.status = "ended";
   return saveRoom(room);
 }
 

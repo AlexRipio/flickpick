@@ -105,8 +105,8 @@ const WelcomeScreen = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
           <div style={{ animation: 'fp-entrance 0.8s 0.15s ease-out both' }}>
             <h1 style={{
-              fontFamily: '"Space Grotesk", system-ui',
-              fontSize: 46, fontWeight: 800, letterSpacing: -1.6,
+              fontFamily: '"Syne", "Space Grotesk", system-ui',
+              fontSize: 48, fontWeight: 800, letterSpacing: -2,
               color: FP.text, margin: 0, lineHeight: 1.0,
             }}>
               Acaba con<br/>
