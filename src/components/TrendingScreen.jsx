@@ -6,7 +6,7 @@ import {
   getTrending, getTrendingTV, getNowPlaying,
   getMoviesByGenre, getTVByGenre, backdropUrl, posterUrl,
 } from '@/lib/tmdb';
-import { isInWatchlist, toggleWatchlist, subscribeWatchlist } from '@/lib/watchlist';
+import { isInWatchlist, toggleWatchlist, subscribeWatchlist, getWatchlist } from '@/lib/watchlist';
 import DetailSheet from '@/components/DetailSheet';
 
 // ─── Tiny floating toast ──────────────────────────────────────────────────────
@@ -323,8 +323,20 @@ export default function TrendingScreen() {
         <DetailSheet
           movie={selected}
           onClose={close}
-          onLike={close}
           onSkip={close}
+          skipLabel="Cerrar"
+          likeLabel="❤️ Guardar"
+          onLike={() => {
+            const already = isInWatchlist(selected.id);
+            if (!already) {
+              toggleWatchlist(selected);
+              if (_setGlobalToast) {
+                _setGlobalToast(`❤️ Añadida: ${selected.title || selected.name}`);
+                setTimeout(() => _setGlobalToast(null), 2000);
+              }
+            }
+            close();
+          }}
         />
       )}
 

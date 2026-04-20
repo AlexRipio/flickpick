@@ -5,6 +5,7 @@ import { Poster } from '@/components/fp/Poster';
 import { FP, memberColor } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
 import { getTrending, posterUrl } from '@/lib/tmdb';
+import { isInWatchlist, toggleWatchlist } from '@/lib/watchlist';
 import { subscribe } from '@/lib/roomStore';
 import { getWatchlist, subscribeWatchlist } from '@/lib/watchlist';
 import DetailSheet from '@/components/DetailSheet';
@@ -270,8 +271,13 @@ const HomeScreen = () => {
         <DetailSheet
           movie={detailMovie}
           onClose={() => setDetailMovie(null)}
-          onLike={() => setDetailMovie(null)}
           onSkip={() => setDetailMovie(null)}
+          skipLabel="Cerrar"
+          likeLabel="❤️ Guardar"
+          onLike={() => {
+            if (!isInWatchlist(detailMovie.id)) toggleWatchlist(detailMovie);
+            setDetailMovie(null);
+          }}
         />
       )}
     </div>

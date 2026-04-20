@@ -8,6 +8,7 @@ import {
   subscribeWatchlist, subscribeWatched,
   markWatched, unmarkWatched,
   removeFromWatchlist, removeWatched,
+  isInWatchlist, toggleWatchlist,
 } from '@/lib/watchlist';
 import DetailSheet from '@/components/DetailSheet';
 
@@ -172,8 +173,16 @@ export default function WatchlistScreen() {
         <DetailSheet
           movie={selected}
           onClose={() => setSelected(null)}
-          onLike={() => setSelected(null)}
           onSkip={() => setSelected(null)}
+          skipLabel="Cerrar"
+          likeLabel={isInWatchlist(selected.id) ? '❤️ Guardada' : '❤️ Guardar'}
+          onLike={() => {
+            if (!isInWatchlist(selected.id)) {
+              toggleWatchlist(selected);
+              showToast(`❤️ Añadida: ${selected.title || selected.name}`);
+            }
+            setSelected(null);
+          }}
         />
       )}
     </div>

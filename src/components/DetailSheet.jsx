@@ -3,7 +3,7 @@ import { Poster } from '@/components/fp/Poster';
 import { FP } from '@/lib/fp';
 import { getMovieDetails } from '@/lib/tmdb';
 
-const DetailSheet = ({ movie, onClose, onLike, onSkip }) => {
+const DetailSheet = ({ movie, onClose, onLike, onSkip, likeLabel, skipLabel }) => {
   const [show, setShow] = useState(false);
   const [details, setDetails] = useState(null);
 
@@ -199,7 +199,7 @@ const DetailSheet = ({ movie, onClose, onLike, onSkip }) => {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
               <path d="M6 6l12 12M6 18L18 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/>
             </svg>
-            Paso
+            {skipLabel || 'Paso'}
           </button>
           <button onClick={onLike} style={{
             flex: 1.4, height: 52, borderRadius: 999,
@@ -212,7 +212,7 @@ const DetailSheet = ({ movie, onClose, onLike, onSkip }) => {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="#fff">
               <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z"/>
             </svg>
-            Me gusta
+            {likeLabel || 'Me gusta'}
           </button>
         </div>
       </div>

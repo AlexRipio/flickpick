@@ -5,6 +5,7 @@ import { FP, memberColor } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
 import { getRoom, subscribe, removeMatch, hydrateRoomById } from '@/lib/roomStore';
 import { posterUrl } from '@/lib/tmdb';
+import { isInWatchlist, toggleWatchlist } from '@/lib/watchlist';
 import DetailSheet from '@/components/DetailSheet';
 
 const MatchesList = () => {
@@ -155,8 +156,13 @@ const MatchesList = () => {
         <DetailSheet
           movie={selected}
           onClose={() => setSelected(null)}
-          onLike={() => setSelected(null)}
           onSkip={() => setSelected(null)}
+          skipLabel="Cerrar"
+          likeLabel="❤️ Guardar"
+          onLike={() => {
+            if (!isInWatchlist(selected.id)) toggleWatchlist(selected);
+            setSelected(null);
+          }}
         />
       )}
     </div>
