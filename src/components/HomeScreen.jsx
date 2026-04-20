@@ -210,7 +210,7 @@ const HomeScreen = () => {
         {/* ── Watchlist strip ────────────────────────────────────────────── */}
         {watchlist.length > 0 && (
           <div style={{ marginTop: 32 }}>
-            <SectionHeader title={`Quiero ver · ${watchlist.length}`} action="Explorar más" onAction={() => navigate('/trending')}/>
+            <SectionHeader title={`Quiero ver · ${watchlist.length}`} action="Ver lista" onAction={() => navigate('/watchlist')}/>
             <div className="no-scrollbar" style={{ display: 'flex', gap: 12, overflowX: 'auto', margin: '0 -24px', padding: '0 24px 4px' }}>
               {watchlist.map(m => (
                 <div key={m.id} onClick={() => setDetailMovie(m)} style={{

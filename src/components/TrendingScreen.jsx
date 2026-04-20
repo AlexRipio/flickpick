@@ -51,19 +51,26 @@ function HeartBtn({ movie, style = {} }) {
   };
 
   return (
-    <button onClick={toggle} style={{
-      width: 32, height: 32, borderRadius: 999, border: 'none', cursor: 'pointer',
-      background: saved ? 'rgba(255,59,107,0.25)' : 'rgba(0,0,0,0.55)',
-      backdropFilter: 'blur(8px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      transition: 'background 0.18s, transform 0.14s',
-      transform: 'scale(1)',
-      ...style,
-    }}
+    <button
+      onClick={toggle}
+      onTouchEnd={e => {
+        // Prevent the touch from also firing a click (double-toggle bug on mobile)
+        e.preventDefault();
+        e.stopPropagation();
+        e.currentTarget.style.transform = 'scale(1)';
+        toggle(e);
+      }}
+      onTouchStart={e => { e.stopPropagation(); e.currentTarget.style.transform = 'scale(0.88)'; }}
       onMouseDown={e => { e.stopPropagation(); e.currentTarget.style.transform = 'scale(0.88)'; }}
       onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-      onTouchStart={e => { e.stopPropagation(); e.currentTarget.style.transform = 'scale(0.88)'; }}
-      onTouchEnd={e => { e.stopPropagation(); e.currentTarget.style.transform = 'scale(1)'; toggle(e); }}
+      style={{
+        width: 32, height: 32, borderRadius: 999, border: 'none', cursor: 'pointer',
+        background: saved ? 'rgba(255,59,107,0.25)' : 'rgba(0,0,0,0.55)',
+        backdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'background 0.18s, transform 0.14s',
+        ...style,
+      }}
     >
       <svg width="15" height="15" viewBox="0 0 24 24"
         fill={saved ? '#FF3B6B' : 'none'}

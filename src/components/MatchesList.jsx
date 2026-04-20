@@ -274,23 +274,17 @@ function MatchCard({ match, members, onClick, onDelete }) {
           </div>
         </div>
 
-        {/* Ver ahora */}
+        {/* Ver detalles */}
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            window.open(`https://www.justwatch.com/es/buscar?q=${encodeURIComponent(title)}`, '_blank');
-          }}
+          onClick={(e) => { e.stopPropagation(); onClick(); }}
           style={{
-            flexShrink: 0, padding: '8px 11px', borderRadius: 999,
+            flexShrink: 0, padding: '8px 13px', borderRadius: 999,
             background: 'rgba(78,255,214,0.1)', border: '1.5px solid rgba(78,255,214,0.3)',
-            color: '#4EFFD6', fontWeight: 700, fontSize: 11, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap',
+            color: '#4EFFD6', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+            whiteSpace: 'nowrap',
           }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" stroke="#4EFFD6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          Ver
+          Ver →
         </button>
       </div>
     </div>
