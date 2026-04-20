@@ -68,7 +68,7 @@ const MovieSwiper = () => {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const { platforms = [], yearFrom, yearTo } = room.preferences || {};
+      const { platforms = [], yearFrom, yearTo, mediaType = 'movie' } = room.preferences || {};
       const includeCartelera = platforms.includes('cartelera');
       const streamingKeys = platforms.filter(p => p !== 'cartelera');
       const movies = await fetchPoolForRoom({
@@ -77,6 +77,7 @@ const MovieSwiper = () => {
         includeCartelera,
         pages: 3,
         excludeIds: votedIds,
+        mediaType,
       });
       if (!movies.length) setLoadError('No encontramos pelis para estos filtros. Prueba con otras plataformas.');
       setPool(movies);
@@ -312,13 +313,13 @@ const MovieSwiper = () => {
               movie={current}
               style={{
                 zIndex: 3,
-                transform: exitDir ? undefined : `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px) rotate(${rotate}deg)`,
-                transition: dragging ? 'none' : exitDir ? undefined : 'transform 0.18s ease-out',
-                className: exitDir ? (exitDir === 'right' ? 'fp-exit-right' : 'fp-exit-left') : undefined,
+                transform: exitDir
+                  ? `translate(${dragOffset.x + (exitDir === 'right' ? 600 : -600)}px, ${dragOffset.y + 70}px) rotate(${exitDir === 'right' ? 30 : -30}deg)`
+                  : `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px) rotate(${rotate}deg)`,
+                transition: dragging ? 'none' : exitDir ? 'transform 0.42s cubic-bezier(0.4,0,0.95,1)' : 'transform 0.12s ease-out',
                 cursor: dragging ? 'grabbing' : 'grab',
                 touchAction: 'none',
               }}
-              exitDir={exitDir}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
@@ -382,11 +383,10 @@ const MovieSwiper = () => {
   );
 };
 
-function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = true, exitDir, ...rest }) {
+function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = true, ...rest }) {
   const year = movie?.release_date ? movie.release_date.slice(0, 4) : '';
-  const exitClass = exitDir === 'right' ? 'fp-exit-right' : exitDir === 'left' ? 'fp-exit-left' : '';
   return (
-    <div {...rest} className={exitClass} style={{
+    <div {...rest} style={{
       position: 'absolute', top: 0, left: 22, right: 22, bottom: 0,
       borderRadius: 28, overflow: 'hidden',
       background: '#1a0f2e',
@@ -543,7 +543,7 @@ function MatchOverlay({ movie, members, onKeep, onOpen }) {
             textTransform: 'uppercase', fontWeight: 700, marginBottom: 8,
           }}>¡Es un match!</div>
           <div style={{
-            fontFamily: '"Space Grotesk"', fontSize: 34, fontWeight: 800,
+            fontFamily: '"Syne", "Space Grotesk", sans-serif', fontSize: 34, fontWeight: 800,
             color: '#fff', letterSpacing: -1, lineHeight: 1.05,
             background: FP.flame,
             WebkitBackgroundClip: 'text',
@@ -588,6 +588,17 @@ function MatchOverlay({ movie, members, onKeep, onOpen }) {
             cursor: 'pointer',
             boxShadow: '0 8px 24px rgba(255,59,107,0.35)',
           }}>Ver mis matches</button>
+          <button onClick={() => window.open(`https://www.justwatch.com/es/buscar?q=${encodeURIComponent(movie.title || movie.name)}`, '_blank')} style={{
+            width: '100%', height: 48, borderRadius: 999,
+            background: 'rgba(78,255,214,0.12)',
+            border: '1.5px solid rgba(78,255,214,0.3)',
+            color: '#4EFFD6', fontWeight: 700, fontSize: 15,
+            cursor: 'pointer', fontFamily: '"Space Grotesk"',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" stroke="#4EFFD6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            Ver ahora
+          </button>
           <button onClick={onKeep} style={{
             width: '100%', height: 56, borderRadius: 999,
             background: 'transparent', border: '1px solid rgba(255,255,255,0.18)',

@@ -18,6 +18,7 @@ const CreateRoomScreen = () => {
   const navigate = useNavigate();
   const { profile, ensureProfile } = useProfile();
   const [roomName, setRoomName] = useState('Noche de peli');
+  const [mediaType, setMediaType] = useState('movie');
   const [platforms, setPlatforms] = useState(['netflix', 'prime']);
   const [yearFrom, setYearFrom] = useState(2018);
   const [yearTo, setYearTo] = useState(new Date().getFullYear());
@@ -33,7 +34,7 @@ const CreateRoomScreen = () => {
     const me = profile?.name ? profile : ensureProfile('Invitado');
     const created = createRoom({
       name: roomName.trim(),
-      preferences: { platforms, yearFrom, yearTo },
+      preferences: { platforms, yearFrom, yearTo, mediaType },
       host: { id: me.id, name: me.name },
     });
     navigate(`/room/${created.id}/lobby`, { replace: true });
@@ -51,7 +52,7 @@ const CreateRoomScreen = () => {
 
       <div style={{ position: 'relative', zIndex: 2, flex: 1, overflowY: 'auto', padding: '10px 24px 40px', maxWidth: 520, width: '100%', margin: '0 auto' }}>
         <h1 style={{
-          fontFamily: '"Space Grotesk", system-ui', fontSize: 30, fontWeight: 800,
+          fontFamily: '"Syne", "Space Grotesk", sans-serif', fontSize: 30, fontWeight: 800,
           color: FP.text, margin: 0, letterSpacing: -0.8,
         }}>Crea tu sala</h1>
         <p style={{ fontSize: 14, color: FP.textDim, margin: '8px 0 22px' }}>
@@ -59,6 +60,27 @@ const CreateRoomScreen = () => {
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: FP.textDim, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10 }}>
+              Modo
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {[
+                { id: 'movie', label: '🎬 Películas' },
+                { id: 'tv', label: '📺 Series' },
+              ].map(opt => (
+                <button key={opt.id} onClick={() => setMediaType(opt.id)} style={{
+                  flex: 1, padding: '14px 10px', borderRadius: 16,
+                  background: mediaType === opt.id ? FP.flame : 'rgba(255,255,255,0.05)',
+                  border: mediaType === opt.id ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                  color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer',
+                  fontFamily: '"Space Grotesk", system-ui',
+                  boxShadow: mediaType === opt.id ? '0 8px 22px rgba(255,59,107,0.3)' : 'none',
+                  transition: 'all 0.18s',
+                }}>{opt.label}</button>
+              ))}
+            </div>
+          </div>
           <TextField label="Nombre de la sala" value={roomName} onChange={setRoomName} placeholder="Noche de peli 🍿"/>
 
           <div>

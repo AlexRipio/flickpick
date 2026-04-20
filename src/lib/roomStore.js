@@ -209,3 +209,10 @@ export function getMemberVotedIds(room, memberId) {
   const v = room?.votes?.[memberId] || {};
   return new Set(Object.keys(v).map(Number));
 }
+
+export function removeMatch(roomId, movieId) {
+  const room = getRoom(roomId);
+  if (!room) return;
+  room.matches = room.matches.filter(m => m.movieId !== movieId);
+  return saveRoom(room);
+}

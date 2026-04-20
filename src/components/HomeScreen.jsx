@@ -6,6 +6,7 @@ import { FP } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
 import { getTrending } from '@/lib/tmdb';
 import { subscribe } from '@/lib/roomStore';
+import DetailSheet from '@/components/DetailSheet';
 
 function readAllRooms() {
   try { return JSON.parse(localStorage.getItem('flickpick.rooms.v1') || '{}'); } catch { return {}; }
@@ -16,6 +17,7 @@ const HomeScreen = () => {
   const { profile } = useProfile();
   const [trending, setTrending] = useState([]);
   const [tick, setTick] = useState(0);
+  const [detailMovie, setDetailMovie] = useState(null);
 
   useEffect(() => {
     if (!profile?.name) navigate('/welcome', { replace: true });
@@ -78,7 +80,7 @@ const HomeScreen = () => {
             Esta noche
           </div>
           <h1 style={{
-            fontFamily: '"Space Grotesk", system-ui',
+            fontFamily: '"Syne", "Space Grotesk", sans-serif',
             fontSize: 34, fontWeight: 800, color: FP.text,
             margin: 0, letterSpacing: -1, lineHeight: 1.05,
           }}>
@@ -146,19 +148,34 @@ const HomeScreen = () => {
               fontFamily: '"Space Grotesk", system-ui',
               fontSize: 18, fontWeight: 700, color: FP.text,
             }}>Tendencia esta semana</div>
+            <button onClick={() => navigate('/trending')} style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 13, color: FP.textDim, fontWeight: 600,
+              padding: 0,
+            }}>Ver todas →</button>
           </div>
           <div className="no-scrollbar" style={{
             display: 'flex', gap: 12, overflowX: 'auto',
             margin: '0 -24px', padding: '0 24px 4px',
           }}>
             {(trending.length ? trending : Array.from({ length: 6 })).map((m, i) => (
-              <div key={m?.id || i} style={{
-                width: 128, height: 190, borderRadius: 16,
+              <div key={m?.id || i} onClick={() => m && setDetailMovie(m)} style={{
+                width: 150, height: 220, borderRadius: 16,
                 overflow: 'hidden', position: 'relative', flexShrink: 0,
                 boxShadow: '0 10px 22px rgba(0,0,0,0.4)',
                 background: '#1a0f2e',
+                cursor: m ? 'pointer' : 'default',
               }}>
                 {m && <Poster movie={m} showBadge={false}/>}
+                {m && m.vote_average > 0 && (
+                  <div style={{
+                    position: 'absolute', top: 8, left: 8,
+                    padding: '3px 7px', borderRadius: 999,
+                    background: 'rgba(0,0,0,0.7)',
+                    fontSize: 11, fontWeight: 700, color: '#FFB547',
+                    backdropFilter: 'blur(6px)',
+                  }}>★ {m.vote_average.toFixed(1)}</div>
+                )}
                 {m && (
                   <div style={{
                     position: 'absolute', left: 0, right: 0, bottom: 0,
@@ -199,6 +216,14 @@ const HomeScreen = () => {
           </div>
         )}
       </div>
+      {detailMovie && (
+        <DetailSheet
+          movie={detailMovie}
+          onClose={() => setDetailMovie(null)}
+          onLike={() => setDetailMovie(null)}
+          onSkip={() => setDetailMovie(null)}
+        />
+      )}
     </div>
   );
 };

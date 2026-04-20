@@ -12,6 +12,7 @@ const RoomLobby = () => {
   const { profile } = useProfile();
   const [room, setRoom] = useState(() => getRoom(roomId));
   const [copied, setCopied] = useState(false);
+  const [soloWarning, setSoloWarning] = useState(false);
 
   useEffect(() => {
     const handleRoom = (r) => {
@@ -46,6 +47,10 @@ const RoomLobby = () => {
   };
 
   const start = () => {
+    if (!soloWarning && room.members.length === 1) {
+      setSoloWarning(true);
+      return;
+    }
     startRoom(roomId);
     navigate(`/room/${roomId}`, { replace: true });
   };
@@ -197,6 +202,50 @@ const RoomLobby = () => {
           </div>
         )}
       </div>
+
+      {soloWarning && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 100,
+          background: 'rgba(7,5,14,0.92)', backdropFilter: 'blur(12px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 28,
+        }}>
+          <div style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 28, padding: 32,
+            maxWidth: 380, width: '100%', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 36, marginBottom: 14 }}>🎬</div>
+            <div style={{
+              fontFamily: '"Syne", "Space Grotesk", sans-serif',
+              fontSize: 22, fontWeight: 800, color: FP.text,
+              marginBottom: 12, letterSpacing: -0.5,
+            }}>«Houston, we have a problem»</div>
+            <div style={{
+              fontSize: 14, color: FP.textDim, lineHeight: 1.6, marginBottom: 28,
+            }}>
+              Parece que vas a deslizar solo... como Leo DiCaprio esperando su Oscar. No pasa nada, a veces uno es suficiente 🍿
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button onClick={() => setSoloWarning(false)} style={{
+                width: '100%', height: 52, borderRadius: 999,
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.18)',
+                color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer',
+                fontFamily: '"Space Grotesk"',
+              }}>Esperar a alguien</button>
+              <button onClick={() => { setSoloWarning(false); startRoom(roomId); navigate(`/room/${roomId}`, { replace: true }); }} style={{
+                width: '100%', height: 52, borderRadius: 999,
+                background: FP.flame, border: 'none',
+                color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer',
+                fontFamily: '"Space Grotesk"',
+                boxShadow: '0 8px 22px rgba(255,59,107,0.35)',
+              }}>Empezar solo 🎬</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

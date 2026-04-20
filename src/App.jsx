@@ -13,6 +13,7 @@ import RoomLobby from '@/components/RoomLobby';
 import MovieSwiper from '@/components/MovieSwiper';
 import MatchesList from '@/components/MatchesList';
 import ProfileScreen from '@/components/ProfileScreen';
+import TrendingScreen from '@/components/TrendingScreen';
 
 function App() {
   return (
@@ -41,6 +42,7 @@ function App() {
           <Route path="/room/:id" element={<MovieSwiper />} />
           <Route path="/room/:id/matches" element={<MatchesList />} />
           <Route path="/profile" element={<ProfileScreen />} />
+          <Route path="/trending" element={<TrendingScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>

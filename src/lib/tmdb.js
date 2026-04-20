@@ -77,7 +77,25 @@ export function platformIdsFromKeys(keys = []) {
   return keys.filter(k => PROVIDERS[k]).map(k => PROVIDERS[k].id);
 }
 
-export async function fetchPoolForRoom({ platformKeys = [], yearFrom, yearTo, includeCartelera = false, pages = 3, excludeIds = new Set() }) {
+export async function getTrendingTV({ timeWindow = "week", page = 1, excludeIds = new Set() } = {}) {
+  const j = await tmdb(`/trending/tv/${timeWindow}`, { page: String(page) });
+  return (j.results || []).filter(m => m.poster_path && !excludeIds.has(m.id));
+}
+
+export async function discoverTV({ providerIds = [], yearFrom, yearTo, page = 1, excludeIds = new Set() } = {}) {
+  const params = {
+    region: REGION, watch_region: REGION,
+    sort_by: 'popularity.desc', include_adult: 'false',
+    'vote_count.gte': '20', page: String(page),
+  };
+  if (providerIds.length) { params.with_watch_providers = providerIds.join('|'); params.with_watch_monetization_types = 'flatrate|ads|free'; }
+  if (yearFrom) params['first_air_date.gte'] = `${yearFrom}-01-01`;
+  if (yearTo) params['first_air_date.lte'] = `${yearTo}-12-31`;
+  const j = await tmdb('/discover/tv', params);
+  return (j.results || []).filter(m => m.poster_path && !excludeIds.has(m.id));
+}
+
+export async function fetchPoolForRoom({ platformKeys = [], yearFrom, yearTo, includeCartelera = false, pages = 3, excludeIds = new Set(), mediaType = 'movie' }) {
   const providerIds = platformIdsFromKeys(platformKeys);
   const results = [];
   const seen = new Set(excludeIds);
@@ -90,6 +108,32 @@ export async function fetchPoolForRoom({ platformKeys = [], yearFrom, yearTo, in
       }
     }
   };
+
+  if (mediaType === 'tv') {
+    const trendingPages = await Promise.all([1, 2].map(p => getTrendingTV({ page: p, excludeIds: seen }).catch(() => [])));
+    trendingPages.forEach(push);
+
+    if (providerIds.length) {
+      const pagesToFetch = [];
+      for (let p = 1; p <= pages; p++) pagesToFetch.push(p);
+      const discovered = await Promise.all(
+        pagesToFetch.map(p => discoverTV({ providerIds, yearFrom, yearTo, page: p, excludeIds: seen }).catch(() => []))
+      );
+      discovered.forEach(push);
+    }
+
+    if (yearFrom || yearTo) {
+      const year = (m) => m.first_air_date ? Number(m.first_air_date.slice(0, 4)) : null;
+      return results.filter(m => {
+        const y = year(m);
+        if (y == null) return true;
+        if (yearFrom && y < yearFrom) return false;
+        if (yearTo && y > yearTo) return false;
+        return true;
+      });
+    }
+    return results;
+  }
 
   const trendingPages = await Promise.all([1, 2].map(p => getTrending({ page: p, excludeIds: seen }).catch(() => [])));
   trendingPages.forEach(push);
