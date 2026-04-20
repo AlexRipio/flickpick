@@ -8,7 +8,7 @@ import {
   addMember, getMemberVotedIds, getRoom, recordVote,
   closeRoom, subscribe, hydrateRoomById,
 } from '@/lib/roomStore';
-import { fetchPoolForRoom, getSimilar } from '@/lib/tmdb';
+import { fetchPoolForRoom, getSimilar, getMovieDetails, getMovieVideoKey, PROVIDER_WATCH_URLS } from '@/lib/tmdb';
 import { blendTastes, rankPool, topGenres } from '@/lib/matchmaking';
 import DetailSheet from '@/components/DetailSheet';
 
@@ -499,6 +499,29 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
     ? movie.release_date.slice(0, 4)
     : movie?.first_air_date?.slice(0, 4) || '';
 
+  // ── Trailer state ──
+  const [trailerKey,     setTrailerKey]     = useState(null);
+  const [trailerLoading, setTrailerLoading] = useState(false);
+  const [trailerOpen,    setTrailerOpen]    = useState(false);
+
+  // Reset when card changes
+  useEffect(() => {
+    setTrailerKey(null);
+    setTrailerLoading(false);
+    setTrailerOpen(false);
+  }, [movie?.id]);
+
+  const handlePlayTrailer = async (e) => {
+    e.stopPropagation();
+    if (trailerOpen) return;
+    if (trailerKey) { setTrailerOpen(true); return; }
+    setTrailerLoading(true);
+    const mediaType = movie?.first_air_date ? 'tv' : 'movie';
+    const key = await getMovieVideoKey(movie.id, mediaType);
+    setTrailerLoading(false);
+    if (key) { setTrailerKey(key); setTrailerOpen(true); }
+  };
+
   return (
     <div {...rest} style={{
       position: 'absolute', top: 0, left: 22, right: 22, bottom: 0,
@@ -513,7 +536,42 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
     }}>
       <Poster movie={movie} showBadge={true}/>
 
-      {/* ── Bug 3 fix: ✓ / ✗ circle indicators instead of text labels ── */}
+      {/* ── Trailer overlay ── */}
+      {interactive && trailerOpen && trailerKey && (
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          style={{ position: 'absolute', inset: 0, zIndex: 20, background: '#000',
+            display: 'flex', alignItems: 'center' }}
+        >
+          <iframe
+            src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=1&rel=0&modestbranding=1&playsinline=1`}
+            style={{ width: '100%', height: '56.25%', border: 'none' }}
+            allow="autoplay; fullscreen; picture-in-picture"
+            allowFullScreen
+            title="Tráiler"
+          />
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); setTrailerOpen(false); }}
+            style={{
+              position: 'absolute', top: 14, right: 14, zIndex: 22,
+              width: 36, height: 36, borderRadius: 999,
+              background: 'rgba(0,0,0,0.72)', border: '1.5px solid rgba(255,255,255,0.3)',
+              color: '#fff', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+              <path d="M6 6l12 12M6 18L18 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* ── Swipe indicators ── */}
       {/* LIKE indicator — positioned on the LEFT so it stays visible as card moves right */}
       {interactive && likeOp > 0.04 && (
         <div style={{
@@ -581,19 +639,50 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
             overflow: 'hidden',
           }}>{movie.overview}</div>
         )}
-        <div style={{
-          marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6,
-          padding: '5px 10px', borderRadius: 999,
-          background: 'rgba(255,255,255,0.08)',
-          border: '1px solid rgba(255,255,255,0.12)',
-          fontSize: 11, fontWeight: 600, color: '#fff',
-          backdropFilter: 'blur(10px)',
-        }}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="9" stroke="#fff" strokeWidth="2"/>
-            <path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-          Toca para detalles
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '5px 10px', borderRadius: 999,
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            fontSize: 11, fontWeight: 600, color: '#fff',
+            backdropFilter: 'blur(10px)',
+          }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9" stroke="#fff" strokeWidth="2"/>
+              <path d="M12 8v4M12 16h.01" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            Toca para detalles
+          </div>
+
+          {/* Trailer button — only on the front interactive card */}
+          {interactive && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={handlePlayTrailer}
+              disabled={trailerLoading}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '5px 12px', borderRadius: 999,
+                background: 'rgba(255,59,107,0.15)',
+                border: '1px solid rgba(255,59,107,0.4)',
+                fontSize: 11, fontWeight: 700, color: '#FF8FA3',
+                backdropFilter: 'blur(10px)', cursor: trailerLoading ? 'default' : 'pointer',
+                opacity: trailerLoading ? 0.7 : 1,
+              }}
+            >
+              {trailerLoading ? (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
+                  <circle cx="12" cy="12" r="9" stroke="#FF8FA3" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10"/>
+                </svg>
+              ) : (
+                <svg width="9" height="10" viewBox="0 0 10 12" fill="none">
+                  <polygon points="0,0 10,6 0,12" fill="#FF8FA3"/>
+                </svg>
+              )}
+              {trailerLoading ? 'Cargando…' : 'Tráiler'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -624,8 +713,31 @@ function ActionFAB({ children, onClick, variant, size }) {
 // ── MatchOverlay ──────────────────────────────────────────────────────────────
 // Bug 2 fix: much bigger "¡MATCH!" title, explosive gradient, rounder font, more confetti
 function MatchOverlay({ movie, members, onKeep, onOpen }) {
-  const [show, setShow] = useState(false);
+  const [show, setShow]         = useState(false);
+  const [providers, setProviders] = useState(null);
+
   useEffect(() => { const t = setTimeout(() => setShow(true), 50); return () => clearTimeout(t); }, []);
+
+  // Fetch streaming providers for this movie
+  useEffect(() => {
+    if (!movie?.id) return;
+    let cancelled = false;
+    getMovieDetails(movie.id)
+      .then(d => {
+        if (cancelled) return;
+        const p = d?.['watch/providers']?.results?.ES
+               || d?.['watch/providers']?.results?.US
+               || null;
+        setProviders(p);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [movie?.id]);
+
+  const flatrate   = providers?.flatrate?.slice(0, 5) || [];
+  const fallbackUrl = providers?.link
+    || `https://www.justwatch.com/es/buscar?q=${encodeURIComponent(movie.title || movie.name)}`;
+
   const year = movie?.release_date
     ? movie.release_date.slice(0, 4)
     : movie?.first_air_date?.slice(0, 4) || '';
@@ -738,26 +850,52 @@ function MatchOverlay({ movie, members, onKeep, onOpen }) {
             cursor: 'pointer',
             boxShadow: '0 8px 24px rgba(255,59,107,0.38)',
           }}>Ver mis matches</button>
-          <button
-            onClick={() => window.open(
-              `https://www.justwatch.com/es/buscar?q=${encodeURIComponent(movie.title || movie.name)}`,
-              '_blank'
-            )}
-            style={{
-              width: '100%', height: 48, borderRadius: 999,
-              background: 'rgba(78,255,214,0.12)',
-              border: '1.5px solid rgba(78,255,214,0.3)',
-              color: '#4EFFD6', fontWeight: 700, fontSize: 15,
-              cursor: 'pointer', fontFamily: '"Space Grotesk"',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"
-                    stroke="#4EFFD6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            Ver ahora
-          </button>
+          {/* ── Ver ahora: real platform links ── */}
+          {flatrate.length > 0 ? (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+              {flatrate.map(p => {
+                const url = PROVIDER_WATCH_URLS[p.provider_id]?.(movie.title || movie.name) || fallbackUrl;
+                return (
+                  <a key={p.provider_id} href={url} target="_blank" rel="noreferrer" style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
+                    padding: '8px 10px', borderRadius: 14,
+                    background: 'rgba(255,255,255,0.07)',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    textDecoration: 'none',
+                  }}>
+                    <img
+                      src={`https://image.tmdb.org/t/p/w92${p.logo_path}`}
+                      alt={p.provider_name}
+                      style={{ width: 38, height: 38, borderRadius: 9, objectFit: 'cover' }}
+                    />
+                    <span style={{
+                      fontSize: 9, color: 'rgba(255,255,255,0.65)', fontWeight: 700,
+                      fontFamily: '"Space Grotesk"', textAlign: 'center', maxWidth: 64,
+                      lineHeight: 1.2,
+                    }}>{p.provider_name}</span>
+                  </a>
+                );
+              })}
+            </div>
+          ) : (
+            <button
+              onClick={() => window.open(fallbackUrl, '_blank')}
+              style={{
+                width: '100%', height: 48, borderRadius: 999,
+                background: 'rgba(78,255,214,0.12)',
+                border: '1.5px solid rgba(78,255,214,0.3)',
+                color: '#4EFFD6', fontWeight: 700, fontSize: 15,
+                cursor: 'pointer', fontFamily: '"Space Grotesk"',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"
+                      stroke="#4EFFD6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Ver ahora
+            </button>
+          )}
           <button onClick={onKeep} style={{
             width: '100%', height: 52, borderRadius: 999,
             background: 'transparent', border: '1px solid rgba(255,255,255,0.18)',

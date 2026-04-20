@@ -99,6 +99,9 @@ input[type=range]::-webkit-slider-thumb {
 }
 .fp-flame-flicker { animation: fp-flame-flicker 3.8s ease-in-out infinite; transform-origin: center 65%; }
 
+/* Generic spin (used for loading indicators) */
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
 /* Slow rotate for ambient decorations */
 @keyframes fp-spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 

@@ -121,6 +121,41 @@ export async function discoverTV({ providerIds = [], yearFrom, yearTo, page = 1,
   return (j.results || []).filter(m => m.poster_path && !excludeIds.has(m.id));
 }
 
+// ── Direct watch URLs per provider ID (search pages, not deep-links) ──────────
+export const PROVIDER_WATCH_URLS = {
+  8:    (t) => `https://www.netflix.com/search?q=${encodeURIComponent(t)}`,
+  9:    (t) => `https://www.primevideo.com/search?phrase=${encodeURIComponent(t)}`,
+  10:   (t) => `https://www.primevideo.com/search?phrase=${encodeURIComponent(t)}`,
+  119:  (t) => `https://www.primevideo.com/search?phrase=${encodeURIComponent(t)}`,
+  1899: (t) => `https://www.max.com/es/es/search?q=${encodeURIComponent(t)}`,
+  384:  (t) => `https://www.max.com/es/es/search?q=${encodeURIComponent(t)}`,
+  337:  (t) => `https://www.disneyplus.com/es-es/search`,
+  350:  (t) => `https://tv.apple.com/es/search?term=${encodeURIComponent(t)}`,
+  2:    (t) => `https://tv.apple.com/es/search?term=${encodeURIComponent(t)}`,
+  283:  (t) => `https://www.crunchyroll.com/es/search?q=${encodeURIComponent(t)}`,
+  188:  (t) => `https://www.youtube.com/results?search_query=${encodeURIComponent(t)}`,
+  387:  (t) => `https://www.peacocktv.com/search?q=${encodeURIComponent(t)}`,
+};
+
+// Returns the first YouTube trailer key for a movie or TV show.
+// Tries Spanish first, falls back to English.
+export async function getMovieVideoKey(movieId, mediaType = 'movie') {
+  const path = `/${mediaType}/${movieId}/videos`;
+  try {
+    const esData = await tmdb(path, {});
+    let trailer = (esData.results || []).find(v => v.type === 'Trailer' && v.site === 'YouTube');
+    if (!trailer) {
+      const enData = await tmdb(path, { language: 'en-US' });
+      const vids = enData.results || [];
+      trailer = vids.find(v => v.type === 'Trailer' && v.site === 'YouTube')
+             || vids.find(v => v.site === 'YouTube');
+    }
+    return trailer?.key || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchPoolForRoom({ platformKeys = [], yearFrom, yearTo, includeCartelera = false, pages = 3, excludeIds = new Set(), mediaType = 'movie' }) {
   const providerIds = platformIdsFromKeys(platformKeys);
   const results = [];
