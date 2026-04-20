@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AmbientBackdrop, Avatar, BackButton, IconButton } from '@/components/fp/primitives';
+import { AmbientBackdrop, BackButton, IconButton } from '@/components/fp/primitives';
 import { Poster } from '@/components/fp/Poster';
 import { FP, memberColor } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
-import { addMember, getMemberVotedIds, getRoom, recordVote, startRoom, closeRoom, subscribe, hydrateRoomById } from '@/lib/roomStore';
+import {
+  addMember, getMemberVotedIds, getRoom, recordVote,
+  closeRoom, subscribe, hydrateRoomById,
+} from '@/lib/roomStore';
 import { fetchPoolForRoom, getSimilar } from '@/lib/tmdb';
 import { blendTastes, rankPool, topGenres } from '@/lib/matchmaking';
 import DetailSheet from '@/components/DetailSheet';
@@ -14,30 +17,35 @@ const REFILL_THRESHOLD = 6;
 
 const MovieSwiper = () => {
   const { id: roomId } = useParams();
-  const navigate = useNavigate();
+  const navigate       = useNavigate();
   const { profile, ensureProfile } = useProfile();
 
-  const [room, setRoom] = useState(() => getRoom(roomId));
-  const [pool, setPool] = useState([]);
-  const [ranked, setRanked] = useState([]);
-  const [idx, setIdx] = useState(0);
+  const [room, setRoom]           = useState(() => getRoom(roomId));
+  const [pool, setPool]           = useState([]);
+  const [ranked, setRanked]       = useState([]);
+  const [idx, setIdx]             = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [matchMovie, setMatchMovie] = useState(null);
+  const [matchMovie, setMatchMovie]   = useState(null);
   const [detailMovie, setDetailMovie] = useState(null);
 
   // drag
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
-  const [exitDir, setExitDir] = useState(null);
-  const startRef = useRef(null);
-  const startTimeRef = useRef(0);
+  const [dragging, setDragging]     = useState(false);
 
-  const fetchedRef = useRef(false);
+  // ── exit animation: the card flying off-screen lives here, separate from the stack
+  // { movie, dir, startX, startY, startRot }
+  const [flyingOut, setFlyingOut] = useState(null);
+
+  const startRef        = useRef(null);
+  const startTimeRef    = useRef(0);
+  const fetchedRef      = useRef(false);
   const votesSinceRerank = useRef(0);
+  const pendingMatchRef = useRef(null);   // holds a match found during swipe animation
 
+  // ── room subscription ─────────────────────────────────────────────────────
   useEffect(() => {
-    const unsub = subscribe(() => setRoom(getRoom(roomId)));
+    const unsub    = subscribe(() => setRoom(getRoom(roomId)));
     const onStorage = () => setRoom(getRoom(roomId));
     window.addEventListener('storage', onStorage);
     return () => { unsub?.(); window.removeEventListener('storage', onStorage); };
@@ -57,9 +65,9 @@ const MovieSwiper = () => {
     hydrate();
   }, [roomId, profile?.id]);
 
-  const me = useMemo(() => room?.members.find(m => m.id === profile?.id) || null, [room, profile]);
-  const isHost = !!(room && profile && room.ownerId === profile.id);
-  const votedIds = useMemo(() => me ? getMemberVotedIds(room, me.id) : new Set(), [room, me]);
+  const me        = useMemo(() => room?.members.find(m => m.id === profile?.id) || null, [room, profile]);
+  const isHost    = !!(room && profile && room.ownerId === profile.id);
+  const votedIds  = useMemo(() => me ? getMemberVotedIds(room, me.id) : new Set(), [room, me]);
   const lobbyTaste = useMemo(() => room ? blendTastes(room.members.map(m => m.taste)) : null, [room]);
 
   const loadPool = useCallback(async () => {
@@ -70,14 +78,10 @@ const MovieSwiper = () => {
     try {
       const { platforms = [], yearFrom, yearTo, mediaType = 'movie' } = room.preferences || {};
       const includeCartelera = platforms.includes('cartelera');
-      const streamingKeys = platforms.filter(p => p !== 'cartelera');
+      const streamingKeys    = platforms.filter(p => p !== 'cartelera');
       const movies = await fetchPoolForRoom({
-        platformKeys: streamingKeys,
-        yearFrom, yearTo,
-        includeCartelera,
-        pages: 3,
-        excludeIds: votedIds,
-        mediaType,
+        platformKeys: streamingKeys, yearFrom, yearTo,
+        includeCartelera, pages: 3, excludeIds: votedIds, mediaType,
       });
       if (!movies.length) setLoadError('No encontramos pelis para estos filtros. Prueba con otras plataformas.');
       setPool(movies);
@@ -92,31 +96,39 @@ const MovieSwiper = () => {
     if (room?.status === 'live') loadPool();
   }, [room?.status, loadPool]);
 
+  // ── FIX (bug 4): only reset idx/ranked when the POOL changes (initial load).
+  // If lobbyTaste / votedIds were in the dep-array, every remote vote from device A
+  // would call setIdx(0) on device B, teleporting its card position back to zero.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (pool.length === 0) { setRanked([]); return; }
-    const r = rankPool(pool, lobbyTaste, votedIds);
-    setRanked(r);
+    setRanked(rankPool(pool, lobbyTaste, votedIds));
     setIdx(0);
-  }, [pool, lobbyTaste, votedIds]);
+  }, [pool]); // intentionally omitting lobbyTaste / votedIds
 
   const expandWithSimilar = useCallback(async () => {
     if (!me || me.taste.likes < 2) return;
     const tops = topGenres(lobbyTaste, 3);
     if (!tops.length) return;
-    const likedEntries = Object.entries(room.votes[me.id] || {}).filter(([, v]) => v === 'like').slice(-3);
+    const likedEntries = Object.entries(room.votes[me.id] || {})
+      .filter(([, v]) => v === 'like').slice(-3);
     const seedIds = likedEntries.map(([id]) => Number(id));
     try {
-      const sets = await Promise.all(seedIds.map(id => getSimilar(id, { excludeIds: votedIds }).catch(() => [])));
-      const seen = new Set(pool.map(m => m.id));
+      const sets = await Promise.all(
+        seedIds.map(id => getSimilar(id, { excludeIds: votedIds }).catch(() => []))
+      );
+      const seen      = new Set(pool.map(m => m.id));
       const newMovies = [];
-      for (const list of sets) for (const m of list) if (!seen.has(m.id) && !votedIds.has(m.id)) { seen.add(m.id); newMovies.push(m); }
+      for (const list of sets)
+        for (const m of list)
+          if (!seen.has(m.id) && !votedIds.has(m.id)) { seen.add(m.id); newMovies.push(m); }
       if (newMovies.length) setPool(prev => [...prev, ...newMovies]);
     } catch {}
   }, [me, lobbyTaste, room, votedIds, pool]);
 
-  const current = ranked[idx] || null;
-  const next = ranked[idx + 1] || null;
-  const after = ranked[idx + 2] || null;
+  const current = ranked[idx]     || null;
+  const next    = ranked[idx + 1] || null;
+  const after   = ranked[idx + 2] || null;
 
   useEffect(() => {
     if (room?.status !== 'live') return;
@@ -124,40 +136,60 @@ const MovieSwiper = () => {
     if (remaining < REFILL_THRESHOLD && me && me.taste.likes >= 2) expandWithSimilar();
   }, [idx, ranked.length, room?.status, expandWithSimilar, me]);
 
+  // ── swipe ─────────────────────────────────────────────────────────────────
   const swipe = (dir, movie) => {
-    if (!movie || !me || exitDir) return;
-    setExitDir(dir);
+    if (!movie || !me || flyingOut) return;
+
+    // Capture drag state so FlyingCard starts from the same visual position
+    const capturedX   = dragOffset.x;
+    const capturedY   = dragOffset.y * 0.3;
+    const capturedRot = capturedX * 0.08;
+
+    // Launch the exit animation overlay
+    setFlyingOut({ movie, dir, startX: capturedX, startY: capturedY, startRot: capturedRot });
+
+    // Reset pointer state immediately so the next card is clean
+    setDragOffset({ x: 0, y: 0 });
+    setDragging(false);
+    startRef.current = null;
+
     let madeMatchMovie = null;
     try {
-      const { madeMatch, room: updated } = recordVote(roomId, me.id, movie, dir === 'right' ? 'like' : 'skip');
+      const { madeMatch, room: updated } = recordVote(
+        roomId, me.id, movie, dir === 'right' ? 'like' : 'skip'
+      );
       setRoom(updated);
       if (madeMatch) madeMatchMovie = movie;
+
       votesSinceRerank.current += 1;
       if (votesSinceRerank.current >= RERANK_EVERY) {
         votesSinceRerank.current = 0;
         const updatedTaste = blendTastes(updated.members.map(m => m.taste));
         const updatedVoted = getMemberVotedIds(updated, me.id);
-        setRanked(prev => rankPool(prev.slice(idx + 1), updatedTaste, updatedVoted));
+        setRanked(rankPool(ranked.slice(idx + 1), updatedTaste, updatedVoted));
         setIdx(0);
         if (dir === 'right') expandWithSimilar();
-        setTimeout(() => {
-          setExitDir(null);
-          setDragOffset({ x: 0, y: 0 });
-          if (madeMatchMovie) setMatchMovie(madeMatchMovie);
-        }, 440);
-        return;
+      } else {
+        setIdx(i => i + 1); // advance immediately — FlyingCard handles the visual exit
       }
-    } catch {}
-    setTimeout(() => {
+    } catch {
       setIdx(i => i + 1);
-      setExitDir(null);
-      setDragOffset({ x: 0, y: 0 });
-      if (madeMatchMovie) setMatchMovie(madeMatchMovie);
+    }
+
+    // Stash pending match so the setTimeout closure doesn't capture stale state
+    pendingMatchRef.current = madeMatchMovie;
+    setTimeout(() => {
+      setFlyingOut(null);
+      if (pendingMatchRef.current) {
+        setMatchMovie(pendingMatchRef.current);
+        pendingMatchRef.current = null;
+      }
     }, 440);
   };
 
+  // ── pointer handlers ──────────────────────────────────────────────────────
   const handlePointerDown = (e) => {
-    if (exitDir) return;
+    if (flyingOut) return;
     startRef.current = { x: e.clientX, y: e.clientY };
     startTimeRef.current = Date.now();
     setDragging(true);
@@ -168,23 +200,31 @@ const MovieSwiper = () => {
     setDragOffset({ x: e.clientX - startRef.current.x, y: e.clientY - startRef.current.y });
   };
   const handlePointerUp = () => {
+    if (!startRef.current) { setDragging(false); return; }
     const { x, y } = dragOffset;
-    const dt = Date.now() - startTimeRef.current;
+    const dt   = Date.now() - startTimeRef.current;
     const dist = Math.hypot(x, y);
     if (dt < 260 && dist < 8 && current) {
       setDetailMovie(current);
       setDragOffset({ x: 0, y: 0 });
-    } else if (x > 90) swipe('right', current);
-    else if (x < -90) swipe('left', current);
-    else setDragOffset({ x: 0, y: 0 });
-    setDragging(false);
-    startRef.current = null;
+      setDragging(false);
+      startRef.current = null;
+    } else if (x > 90) {
+      swipe('right', current);
+    } else if (x < -90) {
+      swipe('left', current);
+    } else {
+      setDragOffset({ x: 0, y: 0 });
+      setDragging(false);
+      startRef.current = null;
+    }
   };
 
   const rotate = dragOffset.x * 0.08;
-  const likeOp = Math.min(1, Math.max(0, dragOffset.x / 120));
-  const skipOp = Math.min(1, Math.max(0, -dragOffset.x / 120));
+  const likeOp = Math.min(1, Math.max(0, dragOffset.x / 100));
+  const skipOp = Math.min(1, Math.max(0, -dragOffset.x / 100));
 
+  // ── guards ────────────────────────────────────────────────────────────────
   if (!room) {
     return (
       <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: FP.textDim }}>
@@ -193,13 +233,12 @@ const MovieSwiper = () => {
       </div>
     );
   }
-
   if (room.status === 'lobby') {
-    // auto-redirect to lobby page
     navigate(`/room/${roomId}/lobby`, { replace: true });
     return null;
   }
 
+  // ── render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <AmbientBackdrop hue={280}/>
@@ -231,7 +270,15 @@ const MovieSwiper = () => {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {isHost && (
-            <IconButton onClick={() => { if (window.confirm('¿Cerrar la sala para todos?')) { closeRoom(roomId); navigate('/home', { replace: true }); } }} size={36} ariaLabel="Cerrar sala">
+            <IconButton
+              onClick={() => {
+                if (window.confirm('¿Cerrar la sala para todos?')) {
+                  closeRoom(roomId);
+                  navigate('/home', { replace: true });
+                }
+              }}
+              size={36} ariaLabel="Cerrar sala"
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                 <path d="M18 6L6 18M6 6l12 12" stroke="#FF3B6B" strokeWidth="2.5" strokeLinecap="round"/>
               </svg>
@@ -239,13 +286,14 @@ const MovieSwiper = () => {
           )}
           <IconButton onClick={() => navigate(`/room/${roomId}/matches`)} size={40} ariaLabel="Matches">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" stroke="#fff" strokeWidth="2" fill="none"/>
+              <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z"
+                    stroke="#fff" strokeWidth="2" fill="none"/>
             </svg>
           </IconButton>
         </div>
       </div>
 
-      {/* progress */}
+      {/* Progress */}
       <div style={{ position: 'relative', zIndex: 5, padding: '0 24px', marginBottom: 10, maxWidth: 520, width: '100%', margin: '0 auto' }}>
         <div style={{ height: 3, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
           <div style={{
@@ -260,7 +308,7 @@ const MovieSwiper = () => {
         </div>
       </div>
 
-      {/* card stack */}
+      {/* ── Card stack ────────────────────────────────────────────────────── */}
       <div style={{
         flex: 1, position: 'relative',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -274,7 +322,8 @@ const MovieSwiper = () => {
           </div>
         )}
 
-        {!isLoading && !current && (
+        {/* Empty state — only show once flyingOut animation also finishes */}
+        {!isLoading && !current && !flyingOut && (
           <div style={{
             textAlign: 'center', padding: 30,
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14,
@@ -294,64 +343,90 @@ const MovieSwiper = () => {
           </div>
         )}
 
-        {!isLoading && current && (
+        {!isLoading && (current || flyingOut) && (
           <>
+            {/* Back card — always transitions to give stack-breathing effect */}
             {after && (
-              <SwipeCard movie={after} style={{
-                transform: 'scale(0.88) translateY(24px)', opacity: 0.45, zIndex: 1,
-                transition: exitDir ? 'transform 0.44s cubic-bezier(0.2,0.8,0.3,1), opacity 0.44s' : 'none',
-              }} interactive={false}/>
+              <SwipeCard
+                key={after.id}
+                movie={after}
+                style={{
+                  zIndex: 1,
+                  transform: 'translate(0px, 24px) scale(0.88)',
+                  opacity: 0.55,
+                  transition: 'transform 0.44s cubic-bezier(0.2,0.8,0.3,1), opacity 0.44s',
+                }}
+              />
             )}
+
+            {/* Middle card */}
             {next && (
-              <SwipeCard movie={next} style={{
-                transform: exitDir ? 'scale(1) translateY(0)' : 'scale(0.94) translateY(12px)',
-                opacity: exitDir ? 1 : 0.85, zIndex: 2,
-                transition: exitDir ? 'transform 0.44s cubic-bezier(0.2,0.8,0.3,1), opacity 0.3s' : 'none',
-              }} interactive={false}/>
+              <SwipeCard
+                key={next.id}
+                movie={next}
+                style={{
+                  zIndex: 2,
+                  transform: 'translate(0px, 12px) scale(0.94)',
+                  opacity: 0.82,
+                  transition: 'transform 0.44s cubic-bezier(0.2,0.8,0.3,1), opacity 0.44s',
+                }}
+              />
             )}
-            <SwipeCard
-              movie={current}
-              style={{
-                zIndex: 3,
-                transform: exitDir
-                  ? `translate(${dragOffset.x + (exitDir === 'right' ? 600 : -600)}px, ${dragOffset.y + 70}px) rotate(${exitDir === 'right' ? 30 : -30}deg)`
-                  : `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px) rotate(${rotate}deg)`,
-                transition: dragging ? 'none' : exitDir ? 'transform 0.42s cubic-bezier(0.4,0,0.95,1)' : 'transform 0.12s ease-out',
-                cursor: dragging ? 'grabbing' : 'grab',
-                touchAction: 'none',
-              }}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              likeOp={likeOp}
-              skipOp={skipOp}
-              interactive={true}
-            />
+
+            {/* Front card — draggable */}
+            {current && (
+              <SwipeCard
+                key={current.id}
+                movie={current}
+                style={{
+                  zIndex: 3,
+                  transform: `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px) scale(1) rotate(${rotate}deg)`,
+                  transition: dragging ? 'none' : 'transform 0.12s ease-out',
+                  cursor: dragging ? 'grabbing' : 'grab',
+                  touchAction: 'none',
+                }}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                likeOp={likeOp}
+                skipOp={skipOp}
+                interactive={true}
+              />
+            )}
+
+            {/* ── Exiting card overlay — flies off independently ── */}
+            {flyingOut && (
+              <FlyingCard
+                key={`exit-${flyingOut.movie.id}`}
+                movie={flyingOut.movie}
+                dir={flyingOut.dir}
+                startX={flyingOut.startX}
+                startY={flyingOut.startY}
+                startRot={flyingOut.startRot}
+              />
+            )}
           </>
         )}
       </div>
 
-      {/* action buttons */}
+      {/* Action buttons */}
       {!isLoading && current && (
         <div style={{
           position: 'relative', zIndex: 5, padding: '18px 24px 32px',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20,
           maxWidth: 520, width: '100%', margin: '0 auto',
         }}>
-          {/* Skip */}
           <ActionFAB onClick={() => swipe('left', current)} variant="skip" size={58}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
               <path d="M6 6l12 12M6 18L18 6" stroke="#FF3B6B" strokeWidth="2.5" strokeLinecap="round"/>
             </svg>
           </ActionFAB>
-          {/* Like — big center */}
           <ActionFAB onClick={() => swipe('right', current)} variant="like" size={72}>
             <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
               <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z" fill="#fff"/>
             </svg>
           </ActionFAB>
-          {/* Info / detalles */}
           <ActionFAB onClick={() => setDetailMovie(current)} variant="info" size={58}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
               <path d="M12 21a9 9 0 100-18 9 9 0 000 18z" stroke="#4EFFD6" strokeWidth="2"/>
@@ -383,8 +458,47 @@ const MovieSwiper = () => {
   );
 };
 
+// ── FlyingCard — mounts at the card's last position, then exits off-screen ─────
+// Two rAF frames give the browser time to paint the initial position before the
+// CSS transition starts, avoiding the card teleporting straight to the target.
+function FlyingCard({ movie, dir, startX, startY, startRot }) {
+  const [exited, setExited] = useState(false);
+
+  useEffect(() => {
+    const id1 = requestAnimationFrame(() => {
+      const id2 = requestAnimationFrame(() => setExited(true));
+      return () => cancelAnimationFrame(id2);
+    });
+    return () => cancelAnimationFrame(id1);
+  }, []);
+
+  const targetX   = dir === 'right' ? 900 : -900;
+  const targetRot = dir === 'right' ? 32  : -32;
+
+  return (
+    <SwipeCard
+      movie={movie}
+      style={{
+        zIndex: 10,
+        pointerEvents: 'none',
+        transform: exited
+          ? `translate(${targetX}px, 90px) scale(1) rotate(${targetRot}deg)`
+          : `translate(${startX}px, ${startY}px) scale(1) rotate(${startRot}deg)`,
+        transition: exited ? 'transform 0.42s cubic-bezier(0.4,0,0.95,1)' : 'none',
+      }}
+      likeOp={dir === 'right' ? 1 : 0}
+      skipOp={dir === 'left'  ? 1 : 0}
+      interactive={true}
+    />
+  );
+}
+
+// ── SwipeCard ──────────────────────────────────────────────────────────────────
 function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = true, ...rest }) {
-  const year = movie?.release_date ? movie.release_date.slice(0, 4) : '';
+  const year = movie?.release_date
+    ? movie.release_date.slice(0, 4)
+    : movie?.first_air_date?.slice(0, 4) || '';
+
   return (
     <div {...rest} style={{
       position: 'absolute', top: 0, left: 22, right: 22, bottom: 0,
@@ -394,34 +508,46 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
       ...style,
     }}>
       <Poster movie={movie} showBadge={true}/>
-      {interactive && likeOp > 0.05 && (
+
+      {/* ── Bug 3 fix: ✓ / ✗ circle indicators instead of text labels ── */}
+      {interactive && likeOp > 0.04 && (
         <div style={{
-          position: 'absolute', top: 30, right: 22,
-          padding: '6px 14px', borderRadius: 10,
-          border: '3px solid #4EFFD6',
-          color: '#4EFFD6',
-          fontFamily: '"Space Grotesk"', fontSize: 24, fontWeight: 800,
-          transform: `rotate(14deg) scale(${0.8 + likeOp * 0.3})`,
-          opacity: likeOp,
-          letterSpacing: 2,
-          textShadow: '0 0 20px rgba(78,255,214,0.5)',
-          boxShadow: '0 0 20px rgba(78,255,214,0.4)',
-          background: 'rgba(0,0,0,0.3)',
-        }}>LIKE</div>
+          position: 'absolute', top: 32, right: 24,
+          width: 62, height: 62, borderRadius: 999,
+          background: `rgba(74,222,128,${0.18 + likeOp * 0.18})`,
+          border: `3.5px solid rgba(74,222,128,${0.6 + likeOp * 0.4})`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transform: `rotate(12deg) scale(${0.65 + likeOp * 0.45})`,
+          opacity: Math.min(1, likeOp * 1.4),
+          boxShadow: `0 0 ${likeOp * 32}px rgba(74,222,128,0.65)`,
+          backdropFilter: 'blur(4px)',
+          transition: 'none',
+        }}>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+            <path d="M20 6L9 17l-5-5" stroke="#4ADE80" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
       )}
-      {interactive && skipOp > 0.05 && (
+      {interactive && skipOp > 0.04 && (
         <div style={{
-          position: 'absolute', top: 30, left: 22,
-          padding: '6px 14px', borderRadius: 10,
-          border: '3px solid #FF3B6B',
-          color: '#FF3B6B',
-          fontFamily: '"Space Grotesk"', fontSize: 24, fontWeight: 800,
-          transform: `rotate(-14deg) scale(${0.8 + skipOp * 0.3})`,
-          opacity: skipOp,
-          letterSpacing: 2,
-          background: 'rgba(0,0,0,0.3)',
-        }}>NOPE</div>
+          position: 'absolute', top: 32, left: 24,
+          width: 62, height: 62, borderRadius: 999,
+          background: `rgba(255,59,107,${0.18 + skipOp * 0.18})`,
+          border: `3.5px solid rgba(255,59,107,${0.6 + skipOp * 0.4})`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transform: `rotate(-12deg) scale(${0.65 + skipOp * 0.45})`,
+          opacity: Math.min(1, skipOp * 1.4),
+          boxShadow: `0 0 ${skipOp * 32}px rgba(255,59,107,0.65)`,
+          backdropFilter: 'blur(4px)',
+          transition: 'none',
+        }}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+            <path d="M6 6l12 12M6 18L18 6" stroke="#FF3B6B" strokeWidth="3" strokeLinecap="round"/>
+          </svg>
+        </div>
       )}
+
+      {/* Bottom info */}
       <div style={{
         position: 'absolute', left: 0, right: 0, bottom: 0,
         padding: '80px 22px 22px',
@@ -437,7 +563,9 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
           marginTop: 6, color: FP.textDim, fontSize: 12, fontWeight: 600,
         }}>
           {year && <span>{year}</span>}
-          {year && movie?.vote_average > 0 && <span style={{ width: 3, height: 3, borderRadius: 999, background: FP.textMuted }}/>}
+          {year && movie?.vote_average > 0 && (
+            <span style={{ width: 3, height: 3, borderRadius: 999, background: FP.textMuted }}/>
+          )}
           {movie?.vote_average > 0 && <span>★ {movie.vote_average.toFixed(1)}</span>}
         </div>
         {movie?.overview && (
@@ -466,22 +594,11 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
   );
 }
 
+// ── ActionFAB ─────────────────────────────────────────────────────────────────
 function ActionFAB({ children, onClick, variant, size }) {
-  const bgs = {
-    skip:    'rgba(255,59,107,0.1)',
-    like:    FP.flame,
-    info:    'rgba(78,255,214,0.1)',
-  };
-  const borders = {
-    skip:    '1.5px solid rgba(255,59,107,0.3)',
-    like:    'none',
-    info:    '1.5px solid rgba(78,255,214,0.3)',
-  };
-  const shadows = {
-    skip:    '0 6px 20px rgba(255,59,107,0.2)',
-    like:    '0 10px 32px rgba(255,59,107,0.5)',
-    info:    '0 6px 20px rgba(78,255,214,0.15)',
-  };
+  const bgs     = { skip: 'rgba(255,59,107,0.1)', like: FP.flame,  info: 'rgba(78,255,214,0.1)' };
+  const borders = { skip: '1.5px solid rgba(255,59,107,0.3)', like: 'none', info: '1.5px solid rgba(78,255,214,0.3)' };
+  const shadows = { skip: '0 6px 20px rgba(255,59,107,0.2)', like: '0 10px 32px rgba(255,59,107,0.5)', info: '0 6px 20px rgba(78,255,214,0.15)' };
   return (
     <button onClick={onClick} style={{
       width: size, height: size, borderRadius: 999,
@@ -491,24 +608,29 @@ function ActionFAB({ children, onClick, variant, size }) {
       cursor: 'pointer', color: '#fff', padding: 0,
       transition: 'transform 0.12s',
     }}
-      onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.9)'; }}
-      onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+      onMouseDown={e  => { e.currentTarget.style.transform = 'scale(0.9)'; }}
+      onMouseUp={e    => { e.currentTarget.style.transform = 'scale(1)'; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
     >{children}</button>
   );
 }
 
+// ── MatchOverlay ──────────────────────────────────────────────────────────────
+// Bug 2 fix: much bigger "¡MATCH!" title, explosive gradient, rounder font, more confetti
 function MatchOverlay({ movie, members, onKeep, onOpen }) {
   const [show, setShow] = useState(false);
   useEffect(() => { const t = setTimeout(() => setShow(true), 50); return () => clearTimeout(t); }, []);
-  const year = movie?.release_date ? movie.release_date.slice(0, 4) : '';
+  const year = movie?.release_date
+    ? movie.release_date.slice(0, 4)
+    : movie?.first_air_date?.slice(0, 4) || '';
 
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 80, overflow: 'hidden',
-      background: 'radial-gradient(120% 80% at 50% 30%, #3A0F5E 0%, #0B0420 60%, #000 100%)',
+      background: 'radial-gradient(130% 80% at 50% 20%, #3A0F5E 0%, #0B0420 55%, #000 100%)',
     }}>
-      <div style={{ position: 'absolute', inset: 0, opacity: 0.35, filter: 'blur(30px) saturate(140%)' }}>
+      {/* Blurred backdrop poster */}
+      <div style={{ position: 'absolute', inset: 0, opacity: 0.28, filter: 'blur(28px) saturate(150%)' }}>
         <Poster movie={movie} showBadge={false}/>
       </div>
 
@@ -517,57 +639,78 @@ function MatchOverlay({ movie, members, onKeep, onOpen }) {
       <div style={{
         position: 'relative', zIndex: 2, height: '100%',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
-        padding: '60px 28px 40px', textAlign: 'center',
-        maxWidth: 520, margin: '0 auto',
+        padding: '44px 28px 36px', textAlign: 'center',
+        maxWidth: 520, margin: '0 auto', overflow: 'hidden',
       }}>
+
+        {/* ── Big "¡MATCH!" header ── */}
         <div style={{
-          width: 210, height: 300, borderRadius: 26, overflow: 'hidden',
-          position: 'relative', marginTop: 30,
-          transform: show ? 'scale(1) rotate(0deg)' : 'scale(0.5) rotate(-20deg)',
+          transform: show ? 'translateY(0) scale(1)' : 'translateY(-24px) scale(0.6)',
           opacity: show ? 1 : 0,
-          transition: 'transform 0.7s cubic-bezier(.2,.8,.3,1.4), opacity 0.4s',
-          boxShadow: '0 30px 60px rgba(155,59,255,0.5), 0 0 80px rgba(255,59,107,0.4)',
+          transition: 'all 0.62s cubic-bezier(.2,.8,.3,1.35)',
+        }}>
+          <div style={{
+            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontSize: 90, fontWeight: 900, lineHeight: 0.88,
+            letterSpacing: -5,
+            background: 'linear-gradient(140deg, #FF6B4A 0%, #FF3B6B 45%, #BF5AF2 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            filter: 'drop-shadow(0 0 44px rgba(255,59,107,0.55))',
+          }}>¡MATCH!</div>
+          <div style={{
+            fontFamily: '"Space Grotesk", sans-serif',
+            fontSize: 13, fontWeight: 600,
+            color: 'rgba(255,255,255,0.5)',
+            letterSpacing: 3.5, textTransform: 'uppercase', marginTop: 6,
+          }}>os ha gustado a los dos 🍿</div>
+        </div>
+
+        {/* Poster */}
+        <div style={{
+          width: 188, height: 270, borderRadius: 24, overflow: 'hidden',
+          position: 'relative', marginTop: 20,
+          transform: show ? 'scale(1) rotate(-1.5deg)' : 'scale(0.45) rotate(-22deg)',
+          opacity: show ? 1 : 0,
+          transition: 'transform 0.72s cubic-bezier(.2,.8,.3,1.4) 0.08s, opacity 0.42s 0.08s',
+          boxShadow: '0 28px 60px rgba(155,59,255,0.55), 0 0 80px rgba(255,59,107,0.38)',
         }}>
           <Poster movie={movie} showBadge={false}/>
         </div>
 
+        {/* Movie title */}
         <div style={{
-          marginTop: 30,
-          transform: show ? 'translateY(0)' : 'translateY(20px)',
+          marginTop: 20,
+          transform: show ? 'translateY(0)' : 'translateY(22px)',
           opacity: show ? 1 : 0,
-          transition: 'all 0.5s 0.2s',
+          transition: 'all 0.52s 0.22s',
         }}>
           <div style={{
-            fontFamily: '"Space Grotesk"', fontSize: 13,
-            letterSpacing: 5, color: '#4EFFD6',
-            textTransform: 'uppercase', fontWeight: 700, marginBottom: 8,
-          }}>¡Es un match!</div>
-          <div style={{
-            fontFamily: '"Syne", "Space Grotesk", sans-serif', fontSize: 34, fontWeight: 800,
-            color: '#fff', letterSpacing: -1, lineHeight: 1.05,
-            background: FP.flame,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            paddingBottom: 6,
+            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontSize: 28, fontWeight: 800,
+            color: '#fff', letterSpacing: -0.8, lineHeight: 1.08,
           }}>{movie.title || movie.name}</div>
-          {year && <div style={{ fontSize: 14, color: FP.textDim, marginTop: 6 }}>{year}</div>}
+          {year && (
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', marginTop: 5 }}>{year}</div>
+          )}
         </div>
 
+        {/* Member avatars */}
         <div style={{
-          display: 'flex', marginTop: 20,
-          transform: show ? 'scale(1)' : 'scale(0.7)',
+          display: 'flex', marginTop: 18,
+          transform: show ? 'scale(1)' : 'scale(0.65)',
           opacity: show ? 1 : 0,
-          transition: 'all 0.5s 0.35s',
+          transition: 'all 0.52s 0.34s',
         }}>
           {members.map((u, i) => (
             <div key={u.id} style={{
-              width: 44, height: 44, borderRadius: 999,
+              width: 42, height: 42, borderRadius: 999,
               background: memberColor(i), color: '#fff',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 700, fontSize: 15,
+              fontWeight: 700, fontSize: 14,
               border: '3px solid #0B0420',
-              marginLeft: i === 0 ? 0 : -12,
-              boxShadow: '0 6px 18px rgba(0,0,0,0.4)',
+              marginLeft: i === 0 ? 0 : -11,
+              boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
               fontFamily: '"Space Grotesk"',
             }}>{(u.name || '?').charAt(0).toUpperCase()}</div>
           ))}
@@ -575,32 +718,42 @@ function MatchOverlay({ movie, members, onKeep, onOpen }) {
 
         <div style={{ flex: 1 }}/>
 
+        {/* Buttons */}
         <div style={{
           width: '100%', display: 'flex', flexDirection: 'column', gap: 10,
-          transform: show ? 'translateY(0)' : 'translateY(30px)',
+          transform: show ? 'translateY(0)' : 'translateY(32px)',
           opacity: show ? 1 : 0,
-          transition: 'all 0.5s 0.5s',
+          transition: 'all 0.52s 0.5s',
         }}>
           <button onClick={onOpen} style={{
             width: '100%', height: 56, borderRadius: 999,
             background: FP.flame, border: 'none', color: '#fff',
             fontFamily: '"Space Grotesk"', fontWeight: 700, fontSize: 16,
             cursor: 'pointer',
-            boxShadow: '0 8px 24px rgba(255,59,107,0.35)',
+            boxShadow: '0 8px 24px rgba(255,59,107,0.38)',
           }}>Ver mis matches</button>
-          <button onClick={() => window.open(`https://www.justwatch.com/es/buscar?q=${encodeURIComponent(movie.title || movie.name)}`, '_blank')} style={{
-            width: '100%', height: 48, borderRadius: 999,
-            background: 'rgba(78,255,214,0.12)',
-            border: '1.5px solid rgba(78,255,214,0.3)',
-            color: '#4EFFD6', fontWeight: 700, fontSize: 15,
-            cursor: 'pointer', fontFamily: '"Space Grotesk"',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" stroke="#4EFFD6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <button
+            onClick={() => window.open(
+              `https://www.justwatch.com/es/buscar?q=${encodeURIComponent(movie.title || movie.name)}`,
+              '_blank'
+            )}
+            style={{
+              width: '100%', height: 48, borderRadius: 999,
+              background: 'rgba(78,255,214,0.12)',
+              border: '1.5px solid rgba(78,255,214,0.3)',
+              color: '#4EFFD6', fontWeight: 700, fontSize: 15,
+              cursor: 'pointer', fontFamily: '"Space Grotesk"',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"
+                    stroke="#4EFFD6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
             Ver ahora
           </button>
           <button onClick={onKeep} style={{
-            width: '100%', height: 56, borderRadius: 999,
+            width: '100%', height: 52, borderRadius: 999,
             background: 'transparent', border: '1px solid rgba(255,255,255,0.18)',
             color: '#fff', fontWeight: 700, fontSize: 16, cursor: 'pointer',
             fontFamily: '"Space Grotesk"',
@@ -611,39 +764,42 @@ function MatchOverlay({ movie, members, onKeep, onOpen }) {
   );
 }
 
+// ── Confetti ──────────────────────────────────────────────────────────────────
 function Confetti({ active }) {
   if (!active) return null;
-  const pieces = Array.from({ length: 60 }, (_, i) => {
-    const colors = ['#FF6B4A', '#FF3B6B', '#9B3BFF', '#4EFFD6', '#FFB547', '#8B5CF6'];
-    const color = colors[i % colors.length];
-    const angle = (i / 60) * Math.PI * 2 + Math.random() * 0.5;
-    const dist = 180 + Math.random() * 280;
-    const dx = Math.cos(angle) * dist;
-    const dy = Math.sin(angle) * dist - 60;
-    const delay = Math.random() * 0.25;
-    const size = 6 + Math.random() * 10;
-    const rot = Math.random() * 720 - 360;
-    const shape = i % 3;
+  const pieces = Array.from({ length: 90 }, (_, i) => {
+    const colors = ['#FF6B4A', '#FF3B6B', '#9B3BFF', '#4EFFD6', '#FFB547', '#8B5CF6', '#F472B6', '#34D399', '#FACC15'];
+    const color  = colors[i % colors.length];
+    const angle  = (i / 90) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
+    const dist   = 160 + Math.random() * 340;
+    const dx     = Math.cos(angle) * dist;
+    const dy     = Math.sin(angle) * dist - 80;
+    const delay  = Math.random() * 0.3;
+    const size   = 5 + Math.random() * 11;
+    const rot    = Math.random() * 800 - 400;
+    const shape  = i % 4; // 0=circle, 1=square, 2=rect, 3=diamond
     return { dx, dy, delay, size, rot, color, shape, i };
   });
+
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 100, overflow: 'hidden' }}>
-      {pieces.map((p) => (
+      {pieces.map(p => (
         <div key={p.i} style={{
-          position: 'absolute', left: '50%', top: '50%',
-          width: p.size, height: p.shape === 2 ? p.size * 0.4 : p.size,
+          position: 'absolute', left: '50%', top: '40%',
+          width:  p.size,
+          height: p.shape === 2 ? p.size * 0.38 : p.shape === 3 ? p.size * 0.7 : p.size,
           background: p.color,
-          borderRadius: p.shape === 0 ? '50%' : p.shape === 1 ? '3px' : '1px',
-          transform: 'translate(-50%, -50%)',
-          animation: `confetti-${p.i} 1.4s cubic-bezier(.1,.6,.2,1) ${p.delay}s forwards`,
+          borderRadius: p.shape === 0 ? '50%' : p.shape === 3 ? '2px' : '3px',
+          transform: `translate(-50%, -50%) ${p.shape === 3 ? 'rotate(45deg)' : ''}`,
+          animation: `fp-confetti-${p.i} 1.5s cubic-bezier(.1,.6,.2,1) ${p.delay}s forwards`,
           opacity: 0,
         }}/>
       ))}
       <style>{pieces.map(p => `
-        @keyframes confetti-${p.i} {
-          0%   { transform: translate(-50%,-50%) scale(0.2) rotate(0deg); opacity: 0; }
-          15%  { opacity: 1; }
-          100% { transform: translate(calc(-50% + ${p.dx}px), calc(-50% + ${p.dy}px)) scale(1) rotate(${p.rot}deg); opacity: 0; }
+        @keyframes fp-confetti-${p.i} {
+          0%   { transform: translate(-50%,-50%) scale(0.15) rotate(0deg); opacity:0; }
+          12%  { opacity:1; }
+          100% { transform: translate(calc(-50% + ${p.dx}px), calc(-50% + ${p.dy}px)) scale(1) rotate(${p.rot}deg); opacity:0; }
         }
       `).join('\n')}</style>
     </div>
