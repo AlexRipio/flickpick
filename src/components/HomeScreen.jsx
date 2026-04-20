@@ -14,14 +14,16 @@ function readAllRooms() {
 
 const HomeScreen = () => {
   const navigate = useNavigate();
-  const { profile } = useProfile();
+  const { profile, authLoading } = useProfile();
   const [trending, setTrending] = useState([]);
   const [tick, setTick] = useState(0);
   const [detailMovie, setDetailMovie] = useState(null);
 
   useEffect(() => {
+    // Wait for Supabase to finish resolving the session (OAuth mobile redirect race condition).
+    if (authLoading) return;
     if (!profile?.name) navigate('/welcome', { replace: true });
-  }, [profile, navigate]);
+  }, [profile, navigate, authLoading]);
 
   useEffect(() => {
     getTrending({ page: 1 }).then(list => setTrending(list.slice(0, 10))).catch(() => {});

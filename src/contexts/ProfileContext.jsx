@@ -18,6 +18,10 @@ function uuid() {
 
 export const ProfileProvider = ({ children }) => {
   const [profile, setProfile] = useState(() => load());
+  // authLoading: true while Supabase is resolving the initial session.
+  // Prevents HomeScreen from redirecting to /welcome before the OAuth
+  // callback token is processed (race condition on mobile OAuth redirects).
+  const [authLoading, setAuthLoading] = useState(hasSupabase);
 
   useEffect(() => {
     const onStorage = (e) => { if (e.key === KEY) setProfile(load()); };
@@ -28,10 +32,15 @@ export const ProfileProvider = ({ children }) => {
   // When Supabase is configured, keep profile in sync with the real auth session.
   useEffect(() => {
     if (!hasSupabase) return;
-    getCurrentProfile().then(p => { if (p) { save(p); setProfile(p); } });
+    // getUser() resolves after Supabase has processed any token in the URL hash.
+    getCurrentProfile().then(p => {
+      if (p) { save(p); setProfile(p); }
+      setAuthLoading(false);
+    });
     const unsub = onAuthChange((p) => {
       if (p) { save(p); setProfile(p); }
       else { localStorage.removeItem(KEY); setProfile(null); }
+      setAuthLoading(false);
     });
     return unsub;
   }, []);
@@ -62,7 +71,7 @@ export const ProfileProvider = ({ children }) => {
     setProfile(null);
   };
 
-  const value = useMemo(() => ({ profile, user: profile, setName, setProfileFields, ensureProfile, clearProfile }), [profile]);
+  const value = useMemo(() => ({ profile, user: profile, authLoading, setName, setProfileFields, ensureProfile, clearProfile }), [profile, authLoading]);
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
 };
 
