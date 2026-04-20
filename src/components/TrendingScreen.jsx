@@ -1,144 +1,490 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AmbientBackdrop, BackButton } from '@/components/fp/primitives';
-import { Poster } from '@/components/fp/Poster';
 import { FP } from '@/lib/fp';
-import { getTrending } from '@/lib/tmdb';
+import {
+  getTrending, getTrendingTV, getNowPlaying,
+  getMoviesByGenre, getTVByGenre, backdropUrl, posterUrl,
+} from '@/lib/tmdb';
 import DetailSheet from '@/components/DetailSheet';
 
-const TrendingScreen = () => {
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+const TABS = [
+  { key: 'movies',     label: '🎬 Películas' },
+  { key: 'series',     label: '📺 Series'    },
+  { key: 'cartelera',  label: '🎭 Cartelera' },
+];
+
+// ─── Mood filters ─────────────────────────────────────────────────────────────
+const MOODS = [
+  { label: '🔥 Todo',       ids: [],    tvIds: []     },
+  { label: '😂 Comedia',    ids: [35],  tvIds: [35]   },
+  { label: '💥 Acción',     ids: [28],  tvIds: [10759]},
+  { label: '😱 Terror',     ids: [27],  tvIds: [27]   },
+  { label: '💕 Romance',    ids: [10749],tvIds:[10749] },
+  { label: '🔮 Sci-Fi',     ids: [878], tvIds: [10765]},
+  { label: '🔍 Thriller',   ids: [53],  tvIds: [53]   },
+  { label: '🎭 Drama',      ids: [18],  tvIds: [18]   },
+  { label: '🎪 Animación',  ids: [16],  tvIds: [16]   },
+];
+
+// ─── Rank medal colours ───────────────────────────────────────────────────────
+const MEDAL = ['#FFD700', '#C0C0C0', '#CD7F32'];
+
+export default function TrendingScreen() {
   const navigate = useNavigate();
-  const [movies, setMovies] = useState([]);
+  const [tab, setTab]       = useState('movies');
+  const [mood, setMood]     = useState(0);          // index into MOODS
+  const [items, setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const moodScrollRef = useRef(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
+  // ── data loader ─────────────────────────────────────────────────────────────
+  const load = useCallback(async (currentTab, moodIdx) => {
+    setLoading(true);
+    setItems([]);
+    try {
+      const m = MOODS[moodIdx];
+      let results = [];
+
+      if (currentTab === 'cartelera') {
         const [p1, p2] = await Promise.all([
-          getTrending({ page: 1 }).catch(() => []),
-          getTrending({ page: 2 }).catch(() => []),
+          getNowPlaying({ page: 1 }).catch(() => []),
+          getNowPlaying({ page: 2 }).catch(() => []),
         ]);
-        const seen = new Set();
-        const all = [];
-        for (const m of [...p1, ...p2]) {
-          if (!seen.has(m.id)) { seen.add(m.id); all.push(m); }
-        }
-        setMovies(all);
-      } finally {
-        setLoading(false);
+        results = [...p1, ...p2];
+      } else if (currentTab === 'movies') {
+        const genreIds = m.ids;
+        const [p1, p2] = await Promise.all([
+          getMoviesByGenre({ genreIds, page: 1 }).catch(() => []),
+          getMoviesByGenre({ genreIds, page: 2 }).catch(() => []),
+        ]);
+        results = [...p1, ...p2];
+      } else {
+        // series
+        const genreIds = m.tvIds;
+        const [p1, p2] = await Promise.all([
+          getTVByGenre({ genreIds, page: 1 }).catch(() => []),
+          getTVByGenre({ genreIds, page: 2 }).catch(() => []),
+        ]);
+        results = [...p1, ...p2];
       }
-    };
-    load();
+
+      // dedupe
+      const seen = new Set();
+      const deduped = [];
+      for (const x of results) {
+        if (!seen.has(x.id)) { seen.add(x.id); deduped.push(x); }
+      }
+      setItems(deduped);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { load(tab, mood); }, [tab, mood, load]);
+
+  // ── helpers ──────────────────────────────────────────────────────────────────
+  const open = (movie) => setSelected(movie);
+  const close = () => setSelected(null);
+
+  const [hero, podium, grid] = items.length
+    ? [items[0], items.slice(1, 3), items.slice(3)]
+    : [null, [], []];
 
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}>
-      <AmbientBackdrop hue={200}/>
+      <AmbientBackdrop hue={220} />
 
+      {/* ── top bar ─────────────────────────────────────────────────────────── */}
       <div style={{
         position: 'relative', zIndex: 2,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '16px 20px', maxWidth: 520, width: '100%', margin: '0 auto',
       }}>
-        <BackButton onClick={() => navigate('/home')}/>
+        <BackButton onClick={() => navigate('/home')} />
         <div style={{ fontSize: 13, fontWeight: 600, color: FP.textDim }}>Tendencias</div>
-        <div style={{ width: 42 }}/>
+        <div style={{ width: 42 }} />
       </div>
 
+      {/* ── scrollable body ─────────────────────────────────────────────────── */}
       <div className="no-scrollbar" style={{
         position: 'relative', zIndex: 2, flex: 1, overflowY: 'auto',
-        padding: '6px 24px 40px', maxWidth: 520, width: '100%', margin: '0 auto',
+        maxWidth: 520, width: '100%', margin: '0 auto',
       }}>
-        <h1 style={{
-          fontFamily: '"Syne", "Space Grotesk", sans-serif',
-          fontSize: 30, fontWeight: 800, color: FP.text,
-          margin: '0 0 6px', letterSpacing: -0.8,
-        }}>Tendencias</h1>
-        <p style={{ fontSize: 14, color: FP.textDim, margin: '0 0 22px' }}>
-          Lo más visto de la semana
-        </p>
 
-        {loading ? (
-          <div style={{ textAlign: 'center', paddingTop: 60, color: FP.textDim }}>
-            <div style={{ fontSize: 44 }}>🎞️</div>
-            <div style={{ marginTop: 10 }}>Cargando tendencias…</div>
-          </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            {movies.map((m, i) => (
-              <TrendingCard key={m.id} movie={m} rank={i + 1} onClick={() => setSelected(m)}/>
+        {/* Title */}
+        <div style={{ padding: '0 24px 0' }}>
+          <h1 style={{
+            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontSize: 32, fontWeight: 800, color: FP.text,
+            margin: '0 0 4px', letterSpacing: -1,
+          }}>Tendencias</h1>
+          <p style={{ fontSize: 13, color: FP.textDim, margin: '0 0 20px' }}>
+            Lo que todo el mundo está viendo ahora
+          </p>
+        </div>
+
+        {/* ── tabs ──────────────────────────────────────────────────────────── */}
+        <div style={{
+          display: 'flex', gap: 8, padding: '0 24px 18px',
+          overflowX: 'auto',
+        }} className="no-scrollbar">
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => { setTab(t.key); setMood(0); }}
+              style={{
+                flexShrink: 0, padding: '8px 18px', borderRadius: 999,
+                fontFamily: '"Space Grotesk", system-ui',
+                fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                transition: 'all 0.18s',
+                background: tab === t.key
+                  ? FP.flame
+                  : 'rgba(255,255,255,0.06)',
+                border: tab === t.key
+                  ? 'none'
+                  : '1px solid rgba(255,255,255,0.1)',
+                color: '#fff',
+                boxShadow: tab === t.key ? '0 4px 18px rgba(255,59,107,0.35)' : 'none',
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── mood pills (not on cartelera) ──────────────────────────────────── */}
+        {tab !== 'cartelera' && (
+          <div ref={moodScrollRef}
+            className="no-scrollbar"
+            style={{
+              display: 'flex', gap: 8, padding: '0 24px 22px',
+              overflowX: 'auto',
+            }}>
+            {MOODS.map((m, i) => (
+              <button key={i} onClick={() => setMood(i)}
+                style={{
+                  flexShrink: 0, padding: '6px 14px', borderRadius: 999,
+                  fontFamily: '"Space Grotesk", system-ui',
+                  fontWeight: 600, fontSize: 12, cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  background: mood === i
+                    ? 'rgba(78,255,214,0.15)'
+                    : 'rgba(255,255,255,0.05)',
+                  border: mood === i
+                    ? '1px solid rgba(78,255,214,0.5)'
+                    : '1px solid rgba(255,255,255,0.08)',
+                  color: mood === i ? '#4EFFD6' : FP.textDim,
+                }}>
+                {m.label}
+              </button>
             ))}
+          </div>
+        )}
+
+        {/* ── loading skeleton ──────────────────────────────────────────────── */}
+        {loading && (
+          <div style={{ padding: '0 24px 40px' }}>
+            <SkeletonHero />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
+              <SkeletonCard /><SkeletonCard />
+              <SkeletonCard /><SkeletonCard />
+            </div>
+          </div>
+        )}
+
+        {/* ── content ───────────────────────────────────────────────────────── */}
+        {!loading && items.length > 0 && (
+          <div style={{ padding: '0 24px 48px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+            {/* #1 Hero */}
+            {hero && <HeroCard movie={hero} onClick={() => open(hero)} />}
+
+            {/* #2 and #3 podium */}
+            {podium.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {podium.map((m, i) => (
+                  <PodiumCard key={m.id} movie={m} rank={i + 2} onClick={() => open(m)} />
+                ))}
+              </div>
+            )}
+
+            {/* Section header */}
+            {grid.length > 0 && (
+              <div style={{
+                fontSize: 11, fontWeight: 700, color: FP.textMuted,
+                letterSpacing: 2, textTransform: 'uppercase', marginTop: 4,
+              }}>
+                Más tendencias
+              </div>
+            )}
+
+            {/* Grid */}
+            {grid.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {grid.map((m, i) => (
+                  <GridCard key={m.id} movie={m} rank={i + 4} onClick={() => open(m)} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!loading && items.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '60px 24px', color: FP.textDim }}>
+            <div style={{ fontSize: 44, marginBottom: 12 }}>🎞️</div>
+            <div>Sin resultados para este filtro</div>
           </div>
         )}
       </div>
 
+      {/* ── detail sheet ────────────────────────────────────────────────────── */}
       {selected && (
         <DetailSheet
           movie={selected}
-          onClose={() => setSelected(null)}
-          onLike={() => setSelected(null)}
-          onSkip={() => setSelected(null)}
+          onClose={close}
+          onLike={close}
+          onSkip={close}
         />
       )}
     </div>
   );
-};
+}
 
-function TrendingCard({ movie, rank, onClick }) {
-  const year = movie.release_date ? movie.release_date.slice(0, 4) : (movie.first_air_date ? movie.first_air_date.slice(0, 4) : '');
+// ─── Hero card (#1) ───────────────────────────────────────────────────────────
+function HeroCard({ movie, onClick }) {
+  const title = movie.title || movie.name;
+  const year = (movie.release_date || movie.first_air_date || '').slice(0, 4);
+  const rating = movie.vote_average > 0 ? movie.vote_average.toFixed(1) : null;
+  const bg = backdropUrl(movie.backdrop_path, 'w780')
+    || posterUrl(movie.poster_path, 'w780');
+
   return (
     <div onClick={onClick} style={{
-      borderRadius: 18, overflow: 'hidden',
-      background: 'rgba(255,255,255,0.03)',
-      border: '1px solid rgba(255,255,255,0.08)',
-      cursor: 'pointer',
+      position: 'relative', borderRadius: 24, overflow: 'hidden',
+      height: 260, cursor: 'pointer',
+      boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
       transition: 'transform 0.14s',
     }}
-      onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.97)'; }}
-      onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+      onTouchStart={e => e.currentTarget.style.transform = 'scale(0.985)'}
+      onTouchEnd={e => e.currentTarget.style.transform = 'scale(1)'}
+      onMouseDown={e => e.currentTarget.style.transform = 'scale(0.985)'}
+      onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
     >
-      {/* Poster */}
-      <div style={{ position: 'relative', aspectRatio: '2/3' }}>
-        <Poster movie={movie} showBadge={false}/>
-        {/* Rank badge */}
+      {/* backdrop */}
+      {bg && (
+        <img src={bg} alt={title} style={{
+          position: 'absolute', inset: 0, width: '100%', height: '100%',
+          objectFit: 'cover',
+        }} />
+      )}
+
+      {/* gradient overlay */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        background: 'linear-gradient(160deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.75) 60%, rgba(0,0,0,0.95) 100%)',
+      }} />
+
+      {/* #1 badge */}
+      <div style={{
+        position: 'absolute', top: 16, left: 16,
+        display: 'flex', alignItems: 'center', gap: 6,
+      }}>
         <div style={{
-          position: 'absolute', top: 8, left: 8,
-          width: 26, height: 26, borderRadius: 999,
-          background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)',
+          background: MEDAL[0],
+          borderRadius: 999, width: 34, height: 34,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11, fontWeight: 800, color: '#fff',
-        }}>#{rank}</div>
-        {/* Rating */}
-        {movie.vote_average > 0 && (
-          <div style={{
-            position: 'absolute', top: 8, right: 8,
-            padding: '3px 7px', borderRadius: 999,
-            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
-            fontSize: 11, fontWeight: 700, color: '#FFB547',
-          }}>★ {movie.vote_average.toFixed(1)}</div>
-        )}
-      </div>
-      {/* Info */}
-      <div style={{ padding: '10px 12px 12px' }}>
+          fontSize: 13, fontWeight: 900, color: '#000',
+          boxShadow: `0 4px 16px rgba(255,215,0,0.5)`,
+        }}>#1</div>
         <div style={{
-          fontFamily: '"Space Grotesk", system-ui',
-          fontSize: 13, fontWeight: 700, color: FP.text,
-          lineHeight: 1.2, marginBottom: 4,
-          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-        }}>{movie.title || movie.name}</div>
-        {year && <div style={{ fontSize: 11, color: FP.textMuted, fontWeight: 600 }}>{year}</div>}
-        {movie.overview && (
-          <div style={{
-            marginTop: 6, fontSize: 11, color: FP.textDim, lineHeight: 1.45,
-            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-          }}>{movie.overview}</div>
-        )}
+          padding: '4px 10px', borderRadius: 999,
+          background: 'rgba(255,215,0,0.15)',
+          border: '1px solid rgba(255,215,0,0.4)',
+          fontSize: 11, fontWeight: 700, color: '#FFD700',
+          letterSpacing: 0.5,
+        }}>Más popular</div>
+      </div>
+
+      {/* rating */}
+      {rating && (
+        <div style={{
+          position: 'absolute', top: 16, right: 16,
+          padding: '5px 10px', borderRadius: 999,
+          background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+          fontSize: 13, fontWeight: 800, color: '#FFD700',
+          display: 'flex', alignItems: 'center', gap: 5,
+        }}>
+          <span>★</span>{rating}
+        </div>
+      )}
+
+      {/* title area */}
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        padding: '20px 18px 20px',
+      }}>
+        <h2 style={{
+          fontFamily: '"Syne", "Space Grotesk", sans-serif',
+          fontSize: 24, fontWeight: 800, color: '#fff',
+          margin: '0 0 6px', letterSpacing: -0.5, lineHeight: 1.1,
+          textShadow: '0 2px 12px rgba(0,0,0,0.8)',
+        }}>{title}</h2>
+        <div style={{
+          display: 'flex', gap: 10, alignItems: 'center',
+          fontSize: 13, color: 'rgba(255,255,255,0.65)',
+        }}>
+          {year && <span>{year}</span>}
+          {movie.overview && (
+            <span style={{
+              display: '-webkit-box', WebkitLineClamp: 1,
+              WebkitBoxOrient: 'vertical', overflow: 'hidden',
+              flex: 1,
+            }}>{movie.overview}</span>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-export default TrendingScreen;
+// ─── Podium cards (#2, #3) ────────────────────────────────────────────────────
+function PodiumCard({ movie, rank, onClick }) {
+  const title = movie.title || movie.name;
+  const year = (movie.release_date || movie.first_air_date || '').slice(0, 4);
+  const rating = movie.vote_average > 0 ? movie.vote_average.toFixed(1) : null;
+  const poster = posterUrl(movie.poster_path, 'w342');
+
+  return (
+    <div onClick={onClick} style={{
+      borderRadius: 20, overflow: 'hidden',
+      background: 'rgba(255,255,255,0.04)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      cursor: 'pointer',
+      transition: 'transform 0.14s',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+    }}
+      onTouchStart={e => e.currentTarget.style.transform = 'scale(0.97)'}
+      onTouchEnd={e => e.currentTarget.style.transform = 'scale(1)'}
+      onMouseDown={e => e.currentTarget.style.transform = 'scale(0.97)'}
+      onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+    >
+      <div style={{ position: 'relative', aspectRatio: '2/3' }}>
+        {poster
+          ? <img src={poster} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <div style={{ width: '100%', height: '100%', background: 'rgba(255,255,255,0.04)' }} />
+        }
+        {/* rank */}
+        <div style={{
+          position: 'absolute', top: 8, left: 8,
+          width: 30, height: 30, borderRadius: 999,
+          background: MEDAL[rank - 1] || 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 900,
+          color: rank <= 3 ? '#000' : '#fff',
+          boxShadow: `0 2px 10px rgba(0,0,0,0.5)`,
+        }}>#{rank}</div>
+        {/* rating */}
+        {rating && (
+          <div style={{
+            position: 'absolute', top: 8, right: 8,
+            padding: '3px 7px', borderRadius: 999,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+            fontSize: 11, fontWeight: 700, color: '#FFD700',
+          }}>★ {rating}</div>
+        )}
+      </div>
+      <div style={{ padding: '10px 11px 12px' }}>
+        <div style={{
+          fontFamily: '"Space Grotesk", system-ui',
+          fontSize: 13, fontWeight: 700, color: FP.text,
+          lineHeight: 1.2, marginBottom: 3,
+          display: '-webkit-box', WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        }}>{title}</div>
+        {year && <div style={{ fontSize: 11, color: FP.textMuted }}>{year}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Grid cards (#4+) ─────────────────────────────────────────────────────────
+function GridCard({ movie, rank, onClick }) {
+  const title = movie.title || movie.name;
+  const year = (movie.release_date || movie.first_air_date || '').slice(0, 4);
+  const rating = movie.vote_average > 0 ? movie.vote_average.toFixed(1) : null;
+  const poster = posterUrl(movie.poster_path, 'w342');
+
+  return (
+    <div onClick={onClick} style={{
+      borderRadius: 18, overflow: 'hidden',
+      background: 'rgba(255,255,255,0.03)',
+      border: '1px solid rgba(255,255,255,0.07)',
+      cursor: 'pointer',
+      transition: 'transform 0.14s',
+    }}
+      onTouchStart={e => e.currentTarget.style.transform = 'scale(0.97)'}
+      onTouchEnd={e => e.currentTarget.style.transform = 'scale(1)'}
+      onMouseDown={e => e.currentTarget.style.transform = 'scale(0.97)'}
+      onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+    >
+      <div style={{ position: 'relative', aspectRatio: '2/3' }}>
+        {poster
+          ? <img src={poster} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          : <div style={{ width: '100%', height: '100%', background: 'rgba(255,255,255,0.04)' }} />
+        }
+        <div style={{
+          position: 'absolute', top: 7, left: 7,
+          padding: '2px 7px', borderRadius: 999,
+          background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
+          fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.7)',
+        }}>#{rank}</div>
+        {rating && (
+          <div style={{
+            position: 'absolute', top: 7, right: 7,
+            padding: '2px 6px', borderRadius: 999,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+            fontSize: 10, fontWeight: 700, color: '#FFD700',
+          }}>★ {rating}</div>
+        )}
+      </div>
+      <div style={{ padding: '9px 10px 11px' }}>
+        <div style={{
+          fontFamily: '"Space Grotesk", system-ui',
+          fontSize: 12, fontWeight: 700, color: FP.text,
+          lineHeight: 1.2, marginBottom: 2,
+          display: '-webkit-box', WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        }}>{title}</div>
+        {year && <div style={{ fontSize: 10, color: FP.textMuted }}>{year}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Skeleton loaders ─────────────────────────────────────────────────────────
+const shimmer = {
+  background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+  backgroundSize: '200% 100%',
+  animation: 'fp-shimmer 1.4s infinite',
+};
+
+function SkeletonHero() {
+  return (
+    <div style={{ borderRadius: 24, height: 260, ...shimmer }} />
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div style={{ borderRadius: 18, overflow: 'hidden' }}>
+      <div style={{ aspectRatio: '2/3', ...shimmer }} />
+      <div style={{ padding: '10px 10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ height: 12, borderRadius: 6, width: '80%', ...shimmer }} />
+        <div style={{ height: 10, borderRadius: 6, width: '40%', ...shimmer }} />
+      </div>
+    </div>
+  );
+}

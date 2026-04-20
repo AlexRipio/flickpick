@@ -77,6 +77,32 @@ export function platformIdsFromKeys(keys = []) {
   return keys.filter(k => PROVIDERS[k]).map(k => PROVIDERS[k].id);
 }
 
+export async function getMoviesByGenre({ genreIds = [], page = 1, excludeIds = new Set() } = {}) {
+  if (!genreIds.length) return getTrending({ page, excludeIds });
+  const params = {
+    sort_by: 'popularity.desc', include_adult: 'false',
+    'vote_count.gte': '80', page: String(page),
+    with_genres: genreIds.join(','),
+  };
+  const j = await tmdb('/discover/movie', params);
+  return (j.results || []).filter(m => m.poster_path && !excludeIds.has(m.id));
+}
+
+export async function getTVByGenre({ genreIds = [], page = 1, excludeIds = new Set() } = {}) {
+  if (!genreIds.length) return getTrendingTV({ page, excludeIds });
+  const params = {
+    sort_by: 'popularity.desc', include_adult: 'false',
+    'vote_count.gte': '20', page: String(page),
+    with_genres: genreIds.join(','),
+  };
+  const j = await tmdb('/discover/tv', params);
+  return (j.results || []).filter(m => m.poster_path && !excludeIds.has(m.id));
+}
+
+export function backdropUrl(path, size = 'w780') {
+  return path ? `https://image.tmdb.org/t/p/${size}${path}` : null;
+}
+
 export async function getTrendingTV({ timeWindow = "week", page = 1, excludeIds = new Set() } = {}) {
   const j = await tmdb(`/trending/tv/${timeWindow}`, { page: String(page) });
   return (j.results || []).filter(m => m.poster_path && !excludeIds.has(m.id));
