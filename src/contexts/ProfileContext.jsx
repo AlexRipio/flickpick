@@ -16,12 +16,19 @@ function uuid() {
   return "u-" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// Only block rendering when there's an active OAuth callback in the URL.
+// Normal app loads don't need to wait — they already have the session in storage.
+function hasOAuthCallback() {
+  if (typeof window === 'undefined') return false;
+  const h = window.location.hash;
+  const s = window.location.search;
+  return h.includes('access_token') || s.includes('code=') || s.includes('error=');
+}
+
 export const ProfileProvider = ({ children }) => {
   const [profile, setProfile] = useState(() => load());
-  // authLoading: true while Supabase is resolving the initial session.
-  // Prevents HomeScreen from redirecting to /welcome before the OAuth
-  // callback token is processed (race condition on mobile OAuth redirects).
-  const [authLoading, setAuthLoading] = useState(hasSupabase);
+  // authLoading: true ONLY when returning from an OAuth redirect.
+  const [authLoading, setAuthLoading] = useState(() => hasSupabase && hasOAuthCallback());
 
   useEffect(() => {
     const onStorage = (e) => { if (e.key === KEY) setProfile(load()); };
