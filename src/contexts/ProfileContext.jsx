@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { getCurrentProfile, onAuthChange, signOut as authSignOut, hasSupabase } from "@/lib/auth";
+import { onAuthChange, signOut as authSignOut, hasSupabase } from "@/lib/auth";
 
 const ProfileContext = createContext(null);
 
@@ -32,17 +32,20 @@ export const ProfileProvider = ({ children }) => {
   // When Supabase is configured, keep profile in sync with the real auth session.
   useEffect(() => {
     if (!hasSupabase) return;
-    // getUser() resolves after Supabase has processed any token in the URL hash.
-    getCurrentProfile().then(p => {
-      if (p) { save(p); setProfile(p); }
-      setAuthLoading(false);
-    });
+
+    // onAuthStateChange fires INITIAL_SESSION on page load — AFTER Supabase has
+    // processed any OAuth token/code in the URL. This is the only reliable moment
+    // to know the real session state on mobile OAuth redirects.
     const unsub = onAuthChange((p) => {
       if (p) { save(p); setProfile(p); }
       else { localStorage.removeItem(KEY); setProfile(null); }
       setAuthLoading(false);
     });
-    return unsub;
+
+    // Safety fallback: if onAuthStateChange never fires (edge case), unlock after 4s.
+    const timeout = setTimeout(() => setAuthLoading(false), 4000);
+
+    return () => { unsub(); clearTimeout(timeout); };
   }, []);
 
   const setName = (name) => {

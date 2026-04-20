@@ -20,10 +20,22 @@ const HomeScreen = () => {
   const [detailMovie, setDetailMovie] = useState(null);
 
   useEffect(() => {
-    // Wait for Supabase to finish resolving the session (OAuth mobile redirect race condition).
     if (authLoading) return;
     if (!profile?.name) navigate('/welcome', { replace: true });
   }, [profile, navigate, authLoading]);
+
+  // Show a clean loading screen while Supabase resolves the session.
+  // Prevents the "Invitado" fallback flickering on mobile OAuth return.
+  if (authLoading) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0A070F' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <img src="/logo.png" alt="FlickPick" style={{ width: 56, height: 56, objectFit: 'cover', objectPosition: 'center top', transform: 'scale(1.55) translateY(-14%)', transformOrigin: 'center top', animation: 'fp-pulse 1.4s ease-in-out infinite' }}/>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', fontFamily: '"Space Grotesk"' }}>Cargando sesión…</div>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     getTrending({ page: 1 }).then(list => setTrending(list.slice(0, 10))).catch(() => {});
