@@ -505,6 +505,7 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
       borderRadius: 28, overflow: 'hidden',
       background: '#1a0f2e',
       boxShadow: '0 30px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06)',
+      willChange: 'transform',
       ...style,
     }}>
       <Poster movie={movie} showBadge={true}/>
@@ -512,7 +513,7 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
       {/* ── Bug 3 fix: ✓ / ✗ circle indicators instead of text labels ── */}
       {interactive && likeOp > 0.04 && (
         <div style={{
-          position: 'absolute', top: 32, right: 24,
+          position: 'absolute', top: 32, right: 14,
           width: 62, height: 62, borderRadius: 999,
           background: `rgba(74,222,128,${0.18 + likeOp * 0.18})`,
           border: `3.5px solid rgba(74,222,128,${0.6 + likeOp * 0.4})`,
@@ -530,7 +531,7 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
       )}
       {interactive && skipOp > 0.04 && (
         <div style={{
-          position: 'absolute', top: 32, left: 24,
+          position: 'absolute', top: 32, left: 14,
           width: 62, height: 62, borderRadius: 999,
           background: `rgba(255,59,107,${0.18 + skipOp * 0.18})`,
           border: `3.5px solid rgba(255,59,107,${0.6 + skipOp * 0.4})`,
