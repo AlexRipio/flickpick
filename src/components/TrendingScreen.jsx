@@ -9,7 +9,27 @@ import {
 import { isInWatchlist, toggleWatchlist, subscribeWatchlist } from '@/lib/watchlist';
 import DetailSheet from '@/components/DetailSheet';
 
-// Small heart button shared by all card types
+// ─── Tiny floating toast ──────────────────────────────────────────────────────
+function MiniToast({ msg, visible }) {
+  return (
+    <div style={{
+      position: 'fixed', bottom: 90, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 999, pointerEvents: 'none',
+      background: 'rgba(20,12,36,0.95)', backdropFilter: 'blur(12px)',
+      border: '1px solid rgba(255,255,255,0.12)',
+      borderRadius: 999, padding: '10px 20px',
+      fontSize: 13, fontWeight: 700, color: '#fff',
+      whiteSpace: 'nowrap',
+      opacity: visible ? 1 : 0,
+      transition: 'opacity 0.22s',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+    }}>{msg}</div>
+  );
+}
+
+// ─── Heart button ─────────────────────────────────────────────────────────────
+let _setGlobalToast = null; // module-level setter so HeartBtn can trigger it
+
 function HeartBtn({ movie, style = {} }) {
   const [saved, setSaved] = useState(() => isInWatchlist(movie.id));
 
@@ -23,6 +43,11 @@ function HeartBtn({ movie, style = {} }) {
     e.stopPropagation();
     const added = toggleWatchlist(movie);
     setSaved(added);
+    if (_setGlobalToast) {
+      const title = movie.title || movie.name || 'Película';
+      _setGlobalToast(added ? `❤️ Añadida: ${title}` : `🗑️ Eliminada de tu lista`);
+      setTimeout(() => _setGlobalToast(null), 2000);
+    }
   };
 
   return (
@@ -76,11 +101,18 @@ const MEDAL = ['#FFD700', '#C0C0C0', '#CD7F32'];
 export default function TrendingScreen() {
   const navigate = useNavigate();
   const [tab, setTab]       = useState('movies');
-  const [mood, setMood]     = useState(0);          // index into MOODS
+  const [mood, setMood]     = useState(0);
   const [items, setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [toastMsg, setToastMsg] = useState(null);
   const moodScrollRef = useRef(null);
+
+  // Register global toast setter so HeartBtn can call it
+  useEffect(() => {
+    _setGlobalToast = setToastMsg;
+    return () => { _setGlobalToast = null; };
+  }, []);
 
   // ── data loader ─────────────────────────────────────────────────────────────
   const load = useCallback(async (currentTab, moodIdx) => {
@@ -288,6 +320,8 @@ export default function TrendingScreen() {
           onSkip={close}
         />
       )}
+
+      <MiniToast msg={toastMsg || ''} visible={!!toastMsg} />
     </div>
   );
 }

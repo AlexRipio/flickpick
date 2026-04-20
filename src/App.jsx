@@ -15,6 +15,7 @@ import MatchesList from '@/components/MatchesList';
 import ProfileScreen from '@/components/ProfileScreen';
 import TrendingScreen from '@/components/TrendingScreen';
 import AuthCallback from '@/components/AuthCallback';
+import MatchesHistory from '@/components/MatchesHistory';
 
 function App() {
   return (
@@ -45,6 +46,7 @@ function App() {
           <Route path="/profile" element={<ProfileScreen />} />
           <Route path="/trending" element={<TrendingScreen />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/matches" element={<MatchesHistory />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
