@@ -505,20 +505,24 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
       borderRadius: 28, overflow: 'hidden',
       background: '#1a0f2e',
       boxShadow: '0 30px 60px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06)',
-      willChange: 'transform',
+      willChange: 'transform, opacity',
+      backfaceVisibility: 'hidden',
+      WebkitBackfaceVisibility: 'hidden',
+      WebkitTransform: 'translateZ(0)',
       ...style,
     }}>
       <Poster movie={movie} showBadge={true}/>
 
       {/* ── Bug 3 fix: ✓ / ✗ circle indicators instead of text labels ── */}
+      {/* LIKE indicator — positioned on the LEFT so it stays visible as card moves right */}
       {interactive && likeOp > 0.04 && (
         <div style={{
-          position: 'absolute', top: 32, right: 14,
+          position: 'absolute', top: 32, left: 18,
           width: 62, height: 62, borderRadius: 999,
           background: `rgba(74,222,128,${0.18 + likeOp * 0.18})`,
           border: `3.5px solid rgba(74,222,128,${0.6 + likeOp * 0.4})`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transform: `rotate(12deg) scale(${0.65 + likeOp * 0.45})`,
+          transform: `rotate(-12deg) scale(${0.65 + likeOp * 0.45})`,
           opacity: Math.min(1, likeOp * 1.4),
           boxShadow: `0 0 ${likeOp * 32}px rgba(74,222,128,0.65)`,
           backdropFilter: 'blur(4px)',
@@ -529,14 +533,15 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
           </svg>
         </div>
       )}
+      {/* NOPE indicator — positioned on the RIGHT so it stays visible as card moves left */}
       {interactive && skipOp > 0.04 && (
         <div style={{
-          position: 'absolute', top: 32, left: 14,
+          position: 'absolute', top: 32, right: 18,
           width: 62, height: 62, borderRadius: 999,
           background: `rgba(255,59,107,${0.18 + skipOp * 0.18})`,
           border: `3.5px solid rgba(255,59,107,${0.6 + skipOp * 0.4})`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transform: `rotate(-12deg) scale(${0.65 + skipOp * 0.45})`,
+          transform: `rotate(12deg) scale(${0.65 + skipOp * 0.45})`,
           opacity: Math.min(1, skipOp * 1.4),
           boxShadow: `0 0 ${skipOp * 32}px rgba(255,59,107,0.65)`,
           backdropFilter: 'blur(4px)',
