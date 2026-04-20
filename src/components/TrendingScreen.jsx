@@ -6,7 +6,49 @@ import {
   getTrending, getTrendingTV, getNowPlaying,
   getMoviesByGenre, getTVByGenre, backdropUrl, posterUrl,
 } from '@/lib/tmdb';
+import { isInWatchlist, toggleWatchlist, subscribeWatchlist } from '@/lib/watchlist';
 import DetailSheet from '@/components/DetailSheet';
+
+// Small heart button shared by all card types
+function HeartBtn({ movie, style = {} }) {
+  const [saved, setSaved] = useState(() => isInWatchlist(movie.id));
+
+  useEffect(() => {
+    setSaved(isInWatchlist(movie.id));
+    const unsub = subscribeWatchlist(() => setSaved(isInWatchlist(movie.id)));
+    return unsub;
+  }, [movie.id]);
+
+  const toggle = (e) => {
+    e.stopPropagation();
+    const added = toggleWatchlist(movie);
+    setSaved(added);
+  };
+
+  return (
+    <button onClick={toggle} style={{
+      width: 32, height: 32, borderRadius: 999, border: 'none', cursor: 'pointer',
+      background: saved ? 'rgba(255,59,107,0.25)' : 'rgba(0,0,0,0.55)',
+      backdropFilter: 'blur(8px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'background 0.18s, transform 0.14s',
+      transform: 'scale(1)',
+      ...style,
+    }}
+      onMouseDown={e => { e.stopPropagation(); e.currentTarget.style.transform = 'scale(0.88)'; }}
+      onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+      onTouchStart={e => { e.stopPropagation(); e.currentTarget.style.transform = 'scale(0.88)'; }}
+      onTouchEnd={e => { e.stopPropagation(); e.currentTarget.style.transform = 'scale(1)'; toggle(e); }}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24"
+        fill={saved ? '#FF3B6B' : 'none'}
+        stroke={saved ? '#FF3B6B' : 'rgba(255,255,255,0.9)'}
+        strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 000-7.78z"/>
+      </svg>
+    </button>
+  );
+}
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 const TABS = [
@@ -306,18 +348,20 @@ function HeroCard({ movie, onClick }) {
         }}>Más popular</div>
       </div>
 
-      {/* rating */}
-      {rating && (
-        <div style={{
-          position: 'absolute', top: 16, right: 16,
-          padding: '5px 10px', borderRadius: 999,
-          background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
-          fontSize: 13, fontWeight: 800, color: '#FFD700',
-          display: 'flex', alignItems: 'center', gap: 5,
-        }}>
-          <span>★</span>{rating}
-        </div>
-      )}
+      {/* top-right: rating + heart */}
+      <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 7, alignItems: 'center' }}>
+        {rating && (
+          <div style={{
+            padding: '5px 10px', borderRadius: 999,
+            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)',
+            fontSize: 13, fontWeight: 800, color: '#FFD700',
+            display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            <span>★</span>{rating}
+          </div>
+        )}
+        <HeartBtn movie={movie} />
+      </div>
 
       {/* title area */}
       <div style={{
@@ -385,15 +429,17 @@ function PodiumCard({ movie, rank, onClick }) {
           color: rank <= 3 ? '#000' : '#fff',
           boxShadow: `0 2px 10px rgba(0,0,0,0.5)`,
         }}>#{rank}</div>
-        {/* rating */}
-        {rating && (
-          <div style={{
-            position: 'absolute', top: 8, right: 8,
-            padding: '3px 7px', borderRadius: 999,
-            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
-            fontSize: 11, fontWeight: 700, color: '#FFD700',
-          }}>★ {rating}</div>
-        )}
+        {/* top-right: rating + heart */}
+        <div style={{ position: 'absolute', top: 7, right: 7, display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-end' }}>
+          {rating && (
+            <div style={{
+              padding: '3px 7px', borderRadius: 999,
+              background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+              fontSize: 11, fontWeight: 700, color: '#FFD700',
+            }}>★ {rating}</div>
+          )}
+          <HeartBtn movie={movie} style={{ width: 28, height: 28 }} />
+        </div>
       </div>
       <div style={{ padding: '10px 11px 12px' }}>
         <div style={{
@@ -441,14 +487,16 @@ function GridCard({ movie, rank, onClick }) {
           background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
           fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.7)',
         }}>#{rank}</div>
-        {rating && (
-          <div style={{
-            position: 'absolute', top: 7, right: 7,
-            padding: '2px 6px', borderRadius: 999,
-            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
-            fontSize: 10, fontWeight: 700, color: '#FFD700',
-          }}>★ {rating}</div>
-        )}
+        <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+          {rating && (
+            <div style={{
+              padding: '2px 6px', borderRadius: 999,
+              background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+              fontSize: 10, fontWeight: 700, color: '#FFD700',
+            }}>★ {rating}</div>
+          )}
+          <HeartBtn movie={movie} style={{ width: 26, height: 26 }} />
+        </div>
       </div>
       <div style={{ padding: '9px 10px 11px' }}>
         <div style={{

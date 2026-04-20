@@ -4,7 +4,7 @@ import { AmbientBackdrop, BackButton } from '@/components/fp/primitives';
 import { Poster } from '@/components/fp/Poster';
 import { FP, memberColor } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
-import { getRoom, subscribe, removeMatch } from '@/lib/roomStore';
+import { getRoom, subscribe, removeMatch, hydrateRoomById } from '@/lib/roomStore';
 import DetailSheet from '@/components/DetailSheet';
 
 const MatchesList = () => {
@@ -15,9 +15,12 @@ const MatchesList = () => {
   const [selected, setSelected] = useState(null);
 
   useEffect(() => {
-    const unsub = subscribe(() => setRoom(getRoom(roomId)));
-    const onStorage = () => setRoom(getRoom(roomId));
+    const handleRoom = (r) => { if (r) setRoom(r); };
+    const unsub = subscribe(() => handleRoom(getRoom(roomId)));
+    const onStorage = () => handleRoom(getRoom(roomId));
     window.addEventListener('storage', onStorage);
+    // Hydrate from Supabase in case room isn't in localStorage (different device)
+    hydrateRoomById(roomId).then(r => { if (r) handleRoom(r); }).catch(() => {});
     return () => { unsub?.(); window.removeEventListener('storage', onStorage); };
   }, [roomId]);
 

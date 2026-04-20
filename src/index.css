@@ -34,7 +34,7 @@ html, body, #root {
   min-height: 100%;
   background: #0A070F;
   color: #F5F2FF;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
