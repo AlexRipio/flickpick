@@ -232,14 +232,6 @@ build: {
         '@babel/generator',
         '@babel/types'
       ]
-    },
-    commonjsOptions: {
-      include: [/html2canvas/, /node_modules/],
-    },
-  },
-  optimizeDeps: {
-    include: ['html2canvas'],
-  },
-		}
-	}
+    }
+  }
 });
