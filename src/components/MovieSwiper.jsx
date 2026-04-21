@@ -350,33 +350,12 @@ const MovieSwiper = () => {
         </div>
       </div>
 
-      {/* Progress — shows swipes toward the next checkpoint */}
-      {(() => {
-        const swipesInCycle  = swipeCount % PAUSE_AT_SWIPES;
-        const cycleProgress  = swipeCount === 0 ? 0 : (swipesInCycle / PAUSE_AT_SWIPES) * 100;
-        const swipesLeft     = PAUSE_AT_SWIPES - swipesInCycle;
-        return (
-          <div style={{ position: 'relative', zIndex: 5, padding: '0 24px', maxWidth: 520, width: '100%', margin: '0 auto', marginBottom: 10 }}>
-            <div style={{ height: 3, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${Math.max(2, cycleProgress)}%`,
-                background: `linear-gradient(90deg, ${FP.flame}, #BF5AF2)`,
-                borderRadius: 2, transition: 'width 0.25s ease-out',
-              }}/>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, fontSize: 11, color: FP.textMuted }}>
-              <span>💘 {room.matches.length} {room.matches.length === 1 ? 'match' : 'matches'}</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                🎬 {swipeCount} swipes
-                {swipeCount > 0 && (
-                  <span style={{ color: 'rgba(255,255,255,0.2)' }}>· {swipesLeft} para el checkpoint</span>
-                )}
-              </span>
-            </div>
-          </div>
-        );
-      })()}
+      {/* Progress — checkpoint cycle bar */}
+      <ProgressBar
+        swipeCount={swipeCount}
+        matchCount={room.matches.length}
+        pauseAt={PAUSE_AT_SWIPES}
+      />
 
       {/* ── Card stack ────────────────────────────────────────────────────── */}
       <div style={{
@@ -540,6 +519,48 @@ const MovieSwiper = () => {
     </div>
   );
 };
+
+// ── ProgressBar — stable component so CSS transition works across renders ────────
+function ProgressBar({ swipeCount, matchCount, pauseAt }) {
+  const swipesInCycle = swipeCount % pauseAt;
+  const pct           = swipeCount === 0 ? 0 : (swipesInCycle / pauseAt) * 100;
+  const swipesLeft    = pauseAt - swipesInCycle;
+
+  return (
+    <div style={{
+      position: 'relative', zIndex: 5,
+      padding: '0 24px', marginBottom: 8,
+      maxWidth: 520, width: '100%', alignSelf: 'center',
+    }}>
+      {/* Track */}
+      <div style={{ height: 4, borderRadius: 99, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+        {/* Fill — stable DOM node, CSS transition animates width */}
+        <div style={{
+          height: '100%',
+          width: `${Math.max(1.5, pct)}%`,
+          background: 'linear-gradient(90deg, #FF3B6B, #BF5AF2)',
+          borderRadius: 99,
+          transition: 'width 0.3s cubic-bezier(0.4,0,0.2,1)',
+        }}/>
+      </div>
+      {/* Labels */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        marginTop: 5, fontSize: 11, color: FP.textMuted,
+      }}>
+        <span>💘 {matchCount} {matchCount === 1 ? 'match' : 'matches'}</span>
+        <span>
+          🎬 {swipeCount}
+          {swipeCount > 0 && (
+            <span style={{ color: 'rgba(255,255,255,0.2)', marginLeft: 4 }}>
+              · {swipesLeft} para el checkpoint
+            </span>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 // ── FlyingCard — mounts at the card's last position, then exits off-screen ─────
 // Two rAF frames give the browser time to paint the initial position before the
