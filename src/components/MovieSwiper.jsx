@@ -12,8 +12,9 @@ import { fetchPoolForRoom, getSimilar, getMovieDetails, getMovieVideoKey, PROVID
 import { blendTastes, rankPool, topGenres } from '@/lib/matchmaking';
 import DetailSheet from '@/components/DetailSheet';
 
-const RERANK_EVERY = 5;
-const REFILL_THRESHOLD = 6;
+const RERANK_EVERY      = 5;
+const REFILL_THRESHOLD  = 6;
+const PAUSE_AT_SWIPES   = 25; // show mid-session pause every N swipes
 
 const MovieSwiper = () => {
   const { id: roomId } = useParams();
@@ -26,8 +27,10 @@ const MovieSwiper = () => {
   const [idx, setIdx]             = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-  const [matchMovie, setMatchMovie]   = useState(null);
-  const [detailMovie, setDetailMovie] = useState(null);
+  const [matchMovie, setMatchMovie]     = useState(null);
+  const [detailMovie, setDetailMovie]   = useState(null);
+  const [showPause, setShowPause]       = useState(false);
+  const swipeCountRef                   = useRef(0); // total swipes this session
 
   // drag
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -209,6 +212,10 @@ const MovieSwiper = () => {
       setIdx(i => i + 1);
     }
 
+    // Increment swipe counter and check pause threshold
+    swipeCountRef.current += 1;
+    const shouldPause = swipeCountRef.current % PAUSE_AT_SWIPES === 0;
+
     // Stash pending match so the setTimeout closure doesn't capture stale state
     pendingMatchRef.current = madeMatchMovie;
     setTimeout(() => {
@@ -216,6 +223,8 @@ const MovieSwiper = () => {
       if (pendingMatchRef.current) {
         setMatchMovie(pendingMatchRef.current);
         pendingMatchRef.current = null;
+      } else if (shouldPause) {
+        setShowPause(true);
       }
     }, 440);
   };
@@ -496,6 +505,19 @@ const MovieSwiper = () => {
           members={room.members}
           onKeep={() => setMatchMovie(null)}
           onOpen={() => { setMatchMovie(null); navigate(`/room/${roomId}/matches`); }}
+        />
+      )}
+
+      {showPause && (
+        <MidSessionPause
+          swipeCount={swipeCountRef.current}
+          matchCount={room.matches?.length || 0}
+          members={room.members}
+          onContinue={() => setShowPause(false)}
+          onEnd={() => {
+            closeRoom(roomId);
+            navigate(`/room/${roomId}/analysis`, { replace: true });
+          }}
         />
       )}
     </div>
@@ -999,6 +1021,169 @@ function Confetti({ active }) {
           100% { transform: translate(calc(-50% + ${p.dx}px), calc(-50% + ${p.dy}px)) scale(1) rotate(${p.rot}deg); opacity:0; }
         }
       `).join('\n')}</style>
+    </div>
+  );
+}
+
+// ── MidSessionPause ───────────────────────────────────────────────────────────
+function MidSessionPause({ swipeCount, matchCount, members, onContinue, onEnd }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setShow(true), 40); return () => clearTimeout(t); }, []);
+
+  const matchRate = swipeCount > 0 ? Math.round((matchCount / swipeCount) * 100) : 0;
+
+  const statItems = [
+    { emoji: '🎬', value: swipeCount, label: 'swipes' },
+    { emoji: '💘', value: matchCount, label: matchCount === 1 ? 'match' : 'matches' },
+    { emoji: '🎯', value: `${matchRate}%`, label: 'afinidad' },
+  ];
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 90, overflow: 'hidden',
+      background: 'radial-gradient(130% 90% at 50% 10%, #1A0A3A 0%, #0B0420 55%, #000 100%)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      padding: '40px 28px',
+    }}>
+      {/* Subtle animated glow */}
+      <div style={{
+        position: 'absolute', top: '15%', left: '50%', transform: 'translateX(-50%)',
+        width: 340, height: 340, borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(155,59,255,0.18) 0%, transparent 70%)',
+        pointerEvents: 'none',
+        animation: 'fp-glow-pulse 3s ease-in-out infinite',
+      }}/>
+      <style>{`
+        @keyframes fp-glow-pulse {
+          0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+          50%       { opacity: 1;   transform: translateX(-50%) scale(1.12); }
+        }
+      `}</style>
+
+      <div style={{
+        position: 'relative', zIndex: 2, width: '100%', maxWidth: 420,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
+      }}>
+
+        {/* Popcorn emoji */}
+        <div style={{
+          fontSize: 68,
+          transform: show ? 'scale(1) rotate(-6deg)' : 'scale(0.3) rotate(-40deg)',
+          opacity: show ? 1 : 0,
+          transition: 'all 0.55s cubic-bezier(.2,.8,.3,1.4)',
+        }}>🍿</div>
+
+        {/* Title */}
+        <div style={{
+          marginTop: 20,
+          transform: show ? 'translateY(0)' : 'translateY(20px)',
+          opacity: show ? 1 : 0,
+          transition: 'all 0.5s 0.1s',
+          textAlign: 'center',
+        }}>
+          <div style={{
+            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontSize: 34, fontWeight: 900, lineHeight: 1.05, letterSpacing: -1,
+            color: '#fff',
+          }}>¿Seguís o lo dejamos?</div>
+          <div style={{
+            marginTop: 8, fontSize: 15, color: 'rgba(255,255,255,0.5)',
+            fontFamily: '"Space Grotesk", sans-serif', lineHeight: 1.4,
+          }}>Lleváis {swipeCount} swipes. Podéis continuar o<br/>ver el resumen de lo que habéis encontrado.</div>
+        </div>
+
+        {/* Stats row */}
+        <div style={{
+          marginTop: 28, display: 'flex', gap: 12, width: '100%',
+          transform: show ? 'translateY(0)' : 'translateY(18px)',
+          opacity: show ? 1 : 0,
+          transition: 'all 0.5s 0.2s',
+        }}>
+          {statItems.map(s => (
+            <div key={s.label} style={{
+              flex: 1, borderRadius: 18, padding: '16px 10px',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              textAlign: 'center',
+            }}>
+              <div style={{ fontSize: 22 }}>{s.emoji}</div>
+              <div style={{
+                fontFamily: '"Syne", sans-serif', fontSize: 26, fontWeight: 800,
+                color: '#fff', lineHeight: 1.1, marginTop: 4,
+              }}>{s.value}</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600, marginTop: 2 }}>
+                {s.label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Member avatars */}
+        <div style={{
+          display: 'flex', marginTop: 22,
+          transform: show ? 'scale(1)' : 'scale(0.7)',
+          opacity: show ? 1 : 0,
+          transition: 'all 0.45s 0.28s',
+        }}>
+          {members.map((u, i) => (
+            <div key={u.id} style={{
+              marginLeft: i === 0 ? 0 : -10,
+              border: '2.5px solid #0B0420', borderRadius: 999,
+            }}>
+              {u.avatarUrl ? (
+                <div style={{ width: 38, height: 38, borderRadius: 999, overflow: 'hidden', background: '#1a0f2e' }}>
+                  <img src={u.avatarUrl} alt={u.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                </div>
+              ) : (
+                <div style={{
+                  width: 38, height: 38, borderRadius: 999,
+                  background: memberColor(i), color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: 700, fontSize: 14, fontFamily: '"Space Grotesk"',
+                }}>{(u.name || '?').charAt(0).toUpperCase()}</div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Buttons */}
+        <div style={{
+          marginTop: 28, width: '100%', display: 'flex', flexDirection: 'column', gap: 10,
+          transform: show ? 'translateY(0)' : 'translateY(24px)',
+          opacity: show ? 1 : 0,
+          transition: 'all 0.5s 0.36s',
+        }}>
+          <button onClick={onContinue} style={{
+            width: '100%', height: 58, borderRadius: 999,
+            background: FP.flame, border: 'none', color: '#fff',
+            fontFamily: '"Space Grotesk", sans-serif', fontWeight: 700, fontSize: 17,
+            cursor: 'pointer',
+            boxShadow: '0 10px 28px rgba(255,59,107,0.38)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}>
+            <span style={{ fontSize: 20 }}>🔥</span> Seguir deslizando
+          </button>
+          <button onClick={onEnd} style={{
+            width: '100%', height: 54, borderRadius: 999,
+            background: 'rgba(78,255,214,0.1)',
+            border: '1.5px solid rgba(78,255,214,0.3)',
+            color: '#4EFFD6', fontWeight: 700, fontSize: 16,
+            cursor: 'pointer', fontFamily: '"Space Grotesk", sans-serif',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}>
+            <span style={{ fontSize: 18 }}>✨</span> Ver resumen final
+          </button>
+        </div>
+
+        {/* Fine print */}
+        <div style={{
+          marginTop: 14, fontSize: 11, color: 'rgba(255,255,255,0.25)',
+          textAlign: 'center', lineHeight: 1.4,
+          opacity: show ? 1 : 0, transition: 'opacity 0.4s 0.5s',
+        }}>
+          Si finalizáis, se cerrará la sala para ambos y<br/>veréis el análisis completo de la sesión.
+        </div>
+      </div>
     </div>
   );
 }
