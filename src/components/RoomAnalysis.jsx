@@ -6,6 +6,7 @@ import { FP, memberColor } from '@/lib/fp';
 import { getRoom, subscribe, hydrateRoomById } from '@/lib/roomStore';
 import { posterUrl } from '@/lib/tmdb';
 import { computeRoomAnalysis } from '@/lib/roomAnalysis';
+import html2canvas from 'html2canvas'
 
 // ── Animated counter ──────────────────────────────────────────────────────────
 function AnimatedNumber({ target, duration = 1200, suffix = '' }) {
