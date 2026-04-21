@@ -30,7 +30,8 @@ const MovieSwiper = () => {
   const [matchMovie, setMatchMovie]     = useState(null);
   const [detailMovie, setDetailMovie]   = useState(null);
   const [showPause, setShowPause]       = useState(false);
-  const swipeCountRef                   = useRef(0); // total swipes this session
+  const [swipeCount, setSwipeCount]     = useState(0); // drives progress bar re-renders
+  const swipeCountRef                   = useRef(0);   // authoritative counter (no stale closure risk)
 
   // drag
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -48,6 +49,13 @@ const MovieSwiper = () => {
   const justMatchedRef   = useRef(null);   // movieId we just matched ourselves (skip subscription trigger)
   const prevMatchIdsRef  = useRef(null);   // snapshot of match IDs from last render cycle
 
+  // ── Derived state — declared BEFORE any effect that uses them ───────────────
+  // (avoids temporal dead zone: useEffect dep arrays are evaluated during render)
+  const me         = useMemo(() => room?.members.find(m => m.id === profile?.id) || null, [room, profile]);
+  const isHost     = !!(room && profile && room.ownerId === profile.id);
+  const votedIds   = useMemo(() => me ? getMemberVotedIds(room, me.id) : new Set(), [room, me]);
+  const lobbyTaste = useMemo(() => room ? blendTastes(room.members.map(m => m.taste)) : null, [room]);
+
   // ── room subscription ─────────────────────────────────────────────────────
   useEffect(() => {
     const unsub    = subscribe(() => setRoom(getRoom(roomId)));
@@ -56,7 +64,7 @@ const MovieSwiper = () => {
     return () => { unsub?.(); window.removeEventListener('storage', onStorage); };
   }, [roomId]);
 
-  // ── Bug 2 fix: detect new matches arriving via subscription (first voter) ─
+  // ── detect new matches arriving via subscription (first voter) ────────────
   useEffect(() => {
     if (!room || !me) return;
 
@@ -97,11 +105,6 @@ const MovieSwiper = () => {
     };
     hydrate();
   }, [roomId, profile?.id]);
-
-  const me        = useMemo(() => room?.members.find(m => m.id === profile?.id) || null, [room, profile]);
-  const isHost    = !!(room && profile && room.ownerId === profile.id);
-  const votedIds  = useMemo(() => me ? getMemberVotedIds(room, me.id) : new Set(), [room, me]);
-  const lobbyTaste = useMemo(() => room ? blendTastes(room.members.map(m => m.taste)) : null, [room]);
 
   const loadPool = useCallback(async () => {
     if (!room || fetchedRef.current) return;
@@ -212,8 +215,9 @@ const MovieSwiper = () => {
       setIdx(i => i + 1);
     }
 
-    // Increment swipe counter and check pause threshold
+    // Increment swipe counter (ref = no stale closure; state = drives re-render)
     swipeCountRef.current += 1;
+    setSwipeCount(swipeCountRef.current);
     const shouldPause = swipeCountRef.current % PAUSE_AT_SWIPES === 0;
 
     // Stash pending match so the setTimeout closure doesn't capture stale state
@@ -346,20 +350,33 @@ const MovieSwiper = () => {
         </div>
       </div>
 
-      {/* Progress */}
-      <div style={{ position: 'relative', zIndex: 5, padding: '0 24px', marginBottom: 10, maxWidth: 520, width: '100%', margin: '0 auto' }}>
-        <div style={{ height: 3, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-          <div style={{
-            height: '100%',
-            width: `${ranked.length ? Math.max(3, (idx / ranked.length) * 100) : 3}%`,
-            background: FP.flame, borderRadius: 2, transition: 'width 0.3s',
-          }}/>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: FP.textMuted }}>
-          <span>{room.matches.length} matches</span>
-          <span>{Math.max(0, ranked.length - idx)} por ver</span>
-        </div>
-      </div>
+      {/* Progress — shows swipes toward the next checkpoint */}
+      {(() => {
+        const swipesInCycle  = swipeCount % PAUSE_AT_SWIPES;
+        const cycleProgress  = swipeCount === 0 ? 0 : (swipesInCycle / PAUSE_AT_SWIPES) * 100;
+        const swipesLeft     = PAUSE_AT_SWIPES - swipesInCycle;
+        return (
+          <div style={{ position: 'relative', zIndex: 5, padding: '0 24px', maxWidth: 520, width: '100%', margin: '0 auto', marginBottom: 10 }}>
+            <div style={{ height: 3, borderRadius: 2, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.max(2, cycleProgress)}%`,
+                background: `linear-gradient(90deg, ${FP.flame}, #BF5AF2)`,
+                borderRadius: 2, transition: 'width 0.25s ease-out',
+              }}/>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, fontSize: 11, color: FP.textMuted }}>
+              <span>💘 {room.matches.length} {room.matches.length === 1 ? 'match' : 'matches'}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                🎬 {swipeCount} swipes
+                {swipeCount > 0 && (
+                  <span style={{ color: 'rgba(255,255,255,0.2)' }}>· {swipesLeft} para el checkpoint</span>
+                )}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Card stack ────────────────────────────────────────────────────── */}
       <div style={{
@@ -510,7 +527,7 @@ const MovieSwiper = () => {
 
       {showPause && (
         <MidSessionPause
-          swipeCount={swipeCountRef.current}
+          swipeCount={swipeCount}
           matchCount={room.matches?.length || 0}
           members={room.members}
           onContinue={() => setShowPause(false)}
