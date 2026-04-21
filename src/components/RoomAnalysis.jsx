@@ -87,12 +87,21 @@ const ShareCard = React.forwardRef(function ShareCard({ analysis, room }, ref) {
       <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
         {memberStats.map((ms, i) => (
           <div key={ms.member.id} style={{ textAlign: 'center' }}>
-            <div style={{
-              width: 48, height: 48, borderRadius: 999,
-              background: memberColor(i), color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 18, fontWeight: 800, margin: '0 auto',
-            }}>{(ms.member.name || '?')[0].toUpperCase()}</div>
+            {ms.member.avatarUrl ? (
+              <div style={{
+                width: 48, height: 48, borderRadius: 999, overflow: 'hidden',
+                background: '#1a0f2e', margin: '0 auto',
+              }}>
+                <img src={ms.member.avatarUrl} alt={ms.member.name} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+              </div>
+            ) : (
+              <div style={{
+                width: 48, height: 48, borderRadius: 999,
+                background: memberColor(i), color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 18, fontWeight: 800, margin: '0 auto',
+              }}>{(ms.member.name || '?')[0].toUpperCase()}</div>
+            )}
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>{ms.member.name}</div>
             <div style={{ fontSize: 11, fontWeight: 700, color: ms.personality.color }}>{ms.personality.emoji} {ms.personality.label}</div>
           </div>
@@ -350,13 +359,23 @@ export default function RoomAnalysis() {
               transition: `all 0.6s ${0.6 + i * 0.12}s`,
             }}>
               {/* Avatar */}
-              <div style={{
-                width: 52, height: 52, borderRadius: 999,
-                background: memberColor(i), color: '#fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 20, fontWeight: 800, flexShrink: 0,
-                boxShadow: `0 0 18px ${memberColor(i)}66`,
-              }}>{(ms.member.name || '?')[0].toUpperCase()}</div>
+              {ms.member.avatarUrl ? (
+                <div style={{
+                  width: 52, height: 52, borderRadius: 999, overflow: 'hidden',
+                  flexShrink: 0, background: '#1a0f2e',
+                  boxShadow: `0 0 18px ${memberColor(i)}66`,
+                }}>
+                  <img src={ms.member.avatarUrl} alt={ms.member.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                </div>
+              ) : (
+                <div style={{
+                  width: 52, height: 52, borderRadius: 999,
+                  background: memberColor(i), color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 20, fontWeight: 800, flexShrink: 0,
+                  boxShadow: `0 0 18px ${memberColor(i)}66`,
+                }}>{(ms.member.name || '?')[0].toUpperCase()}</div>
+              )}
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 800, fontSize: 15, color: '#fff' }}>{ms.member.name}</div>
@@ -489,12 +508,21 @@ export default function RoomAnalysis() {
                     border: '1px solid rgba(255,255,255,0.08)',
                   }}>
                     <div style={{ fontSize: 22 }}>{item.emoji}</div>
-                    <div style={{
-                      width: 36, height: 36, borderRadius: 999,
-                      background: memberColor(idx < 0 ? i : idx), color: '#fff',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 15, fontWeight: 800, margin: '8px auto 4px',
-                    }}>{(item.member.member.name || '?')[0].toUpperCase()}</div>
+                    {item.member.member.avatarUrl ? (
+                      <div style={{
+                        width: 36, height: 36, borderRadius: 999, overflow: 'hidden',
+                        background: '#1a0f2e', margin: '8px auto 4px',
+                      }}>
+                        <img src={item.member.member.avatarUrl} alt={item.member.member.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                      </div>
+                    ) : (
+                      <div style={{
+                        width: 36, height: 36, borderRadius: 999,
+                        background: memberColor(idx < 0 ? i : idx), color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 15, fontWeight: 800, margin: '8px auto 4px',
+                      }}>{(item.member.member.name || '?')[0].toUpperCase()}</div>
+                    )}
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>{item.member.member.name}</div>
                     <div style={{ fontSize: 11, color: FP.textDim, marginTop: 2 }}>{item.label}</div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#FFB547', marginTop: 3 }}>

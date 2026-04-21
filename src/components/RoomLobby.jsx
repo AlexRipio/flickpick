@@ -150,7 +150,7 @@ const RoomLobby = () => {
                 background: 'rgba(255,255,255,0.04)',
                 border: '1px solid rgba(255,255,255,0.08)',
               }}>
-                <Avatar name={m.name} color={memberColor(i)}/>
+                <Avatar name={m.name} color={memberColor(i)} avatarUrl={m.avatarUrl}/>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 600, color: FP.text }}>
                     {m.name}{m.isHost && <span style={{ color: FP.flameSolid, fontSize: 11, marginLeft: 8, fontWeight: 700 }}>ANFITRIÓN</span>}

@@ -147,7 +147,7 @@ export function createRoom({ name, preferences, host }) {
     ownerId: host.id,
     status: "lobby",
     preferences,
-    members: [{ id: host.id, name: host.name, isHost: true, taste: emptyTaste() }],
+    members: [{ id: host.id, name: host.name, avatarUrl: host.avatarUrl || null, isHost: true, taste: emptyTaste() }],
     votes: { [host.id]: {} },
     matches: [],
     createdAt: Date.now(),
@@ -161,9 +161,15 @@ export function addMember(roomId, member) {
   const room = getRoom(roomId);
   if (!room) throw new Error("Sala no encontrada");
   if (room.members.length >= 8) throw new Error("La sala está llena");
-  if (!room.members.some(m => m.id === member.id)) {
-    room.members = [...room.members, { id: member.id, name: member.name, isHost: false, taste: emptyTaste() }];
+  const existing = room.members.find(m => m.id === member.id);
+  if (!existing) {
+    room.members = [...room.members, { id: member.id, name: member.name, avatarUrl: member.avatarUrl || null, isHost: false, taste: emptyTaste() }];
     room.votes[member.id] = room.votes[member.id] || {};
+    saveRoom(room);
+  } else if (member.avatarUrl && existing.avatarUrl !== member.avatarUrl) {
+    // Update avatar if it changed (e.g. user picked a new one)
+    existing.avatarUrl = member.avatarUrl;
+    if (member.name && member.name !== existing.name) existing.name = member.name;
     saveRoom(room);
   }
   return room;

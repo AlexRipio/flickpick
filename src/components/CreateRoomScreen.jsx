@@ -35,7 +35,7 @@ const CreateRoomScreen = () => {
     const created = createRoom({
       name: roomName.trim(),
       preferences: { platforms, yearFrom, yearTo, mediaType },
-      host: { id: me.id, name: me.name },
+      host: { id: me.id, name: me.name, avatarUrl: me.avatarUrl || null },
     });
     navigate(`/room/${created.id}/lobby`, { replace: true });
   };

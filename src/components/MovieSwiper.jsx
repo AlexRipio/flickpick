@@ -58,8 +58,8 @@ const MovieSwiper = () => {
       if (!r) { navigate('/home', { replace: true }); return; }
       setRoom(r);
       const me = profile?.name ? profile : ensureProfile('Invitado');
-      if (me?.id && !r.members.some(m => m.id === me.id)) {
-        try { addMember(roomId, { id: me.id, name: me.name }); } catch {}
+      if (me?.id) {
+        try { addMember(roomId, { id: me.id, name: me.name, avatarUrl: me.avatarUrl || null }); } catch {}
       }
     };
     hydrate();
@@ -257,14 +257,20 @@ const MovieSwiper = () => {
           </div>
           <div style={{ display: 'flex', marginTop: 4 }}>
             {room.members.map((m, i) => (
-              <div key={m.id} style={{
-                width: 24, height: 24, borderRadius: 999,
-                background: memberColor(i), color: '#fff',
-                border: '2px solid #0A070F',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, fontWeight: 700, fontFamily: '"Space Grotesk"',
-                marginLeft: i === 0 ? 0 : -8,
-              }}>{(m.name || '?').charAt(0).toUpperCase()}</div>
+              <div key={m.id} style={{ marginLeft: i === 0 ? 0 : -8, border: '2px solid #0A070F', borderRadius: 999 }}>
+                {m.avatarUrl ? (
+                  <div style={{ width: 24, height: 24, borderRadius: 999, overflow: 'hidden', background: '#1a0f2e' }}>
+                    <img src={m.avatarUrl} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                  </div>
+                ) : (
+                  <div style={{
+                    width: 24, height: 24, borderRadius: 999,
+                    background: memberColor(i), color: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700, fontFamily: '"Space Grotesk"',
+                  }}>{(m.name || '?').charAt(0).toUpperCase()}</div>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -822,15 +828,24 @@ function MatchOverlay({ movie, members, onKeep, onOpen }) {
         }}>
           {members.map((u, i) => (
             <div key={u.id} style={{
-              width: 42, height: 42, borderRadius: 999,
-              background: memberColor(i), color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 700, fontSize: 14,
-              border: '3px solid #0B0420',
               marginLeft: i === 0 ? 0 : -11,
+              border: '3px solid #0B0420', borderRadius: 999,
               boxShadow: '0 6px 18px rgba(0,0,0,0.45)',
-              fontFamily: '"Space Grotesk"',
-            }}>{(u.name || '?').charAt(0).toUpperCase()}</div>
+            }}>
+              {u.avatarUrl ? (
+                <div style={{ width: 42, height: 42, borderRadius: 999, overflow: 'hidden', background: '#1a0f2e' }}>
+                  <img src={u.avatarUrl} alt={u.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                </div>
+              ) : (
+                <div style={{
+                  width: 42, height: 42, borderRadius: 999,
+                  background: memberColor(i), color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: 700, fontSize: 14,
+                  fontFamily: '"Space Grotesk"',
+                }}>{(u.name || '?').charAt(0).toUpperCase()}</div>
+              )}
+            </div>
           ))}
         </div>
 

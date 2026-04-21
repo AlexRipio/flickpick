@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { onAuthChange, signOut as authSignOut, hasSupabase } from "@/lib/auth";
+import { defaultAvatarForName } from "@/lib/avatars";
 
 const ProfileContext = createContext(null);
 
@@ -44,7 +45,18 @@ export const ProfileProvider = ({ children }) => {
     // processed any OAuth token/code in the URL. This is the only reliable moment
     // to know the real session state on mobile OAuth redirects.
     const unsub = onAuthChange((p) => {
-      if (p) { save(p); setProfile(p); }
+      if (p) {
+        // Preserve user-picked avatar across re-auths: only default if missing.
+        const existing = load();
+        const merged = {
+          ...p,
+          avatarUrl: p.avatarUrl || existing?.avatarUrl || defaultAvatarForName(p.name),
+          avatarStyle: existing?.avatarStyle || 'pixel-art',
+          avatarSeed:  existing?.avatarSeed  || p.name,
+          avatarType:  existing?.avatarType  || (p.avatarUrl ? 'oauth' : 'dicebear'),
+        };
+        save(merged); setProfile(merged);
+      }
       else { localStorage.removeItem(KEY); setProfile(null); }
       setAuthLoading(false);
     });
@@ -56,7 +68,15 @@ export const ProfileProvider = ({ children }) => {
   }, []);
 
   const setName = (name) => {
-    const next = profile ? { ...profile, name } : { id: uuid(), name, createdAt: Date.now() };
+    const next = profile
+      ? { ...profile, name, avatarUrl: profile.avatarUrl || defaultAvatarForName(name) }
+      : {
+          id: uuid(), name, createdAt: Date.now(),
+          avatarUrl: defaultAvatarForName(name),
+          avatarStyle: 'pixel-art',
+          avatarSeed: name,
+          avatarType: 'dicebear',
+        };
     save(next);
     setProfile(next);
     return next;

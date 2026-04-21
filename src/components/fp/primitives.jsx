@@ -276,8 +276,28 @@ export function Confetti({ active }) {
   );
 }
 
-export function Avatar({ name, color, size = 40, initial }) {
+export function Avatar({ name, color, size = 40, initial, avatarUrl, ring, style = {} }) {
   const ini = initial || (name || '?').trim().charAt(0).toUpperCase();
+  const baseBorder = ring ? `2px solid ${ring}` : 'none';
+  if (avatarUrl) {
+    return (
+      <div style={{
+        width: size, height: size, borderRadius: 999,
+        overflow: 'hidden', flexShrink: 0,
+        background: '#1a0f2e',
+        border: baseBorder,
+        ...style,
+      }}>
+        <img
+          src={avatarUrl}
+          alt={name || 'avatar'}
+          loading="lazy"
+          draggable={false}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', userSelect: 'none' }}
+        />
+      </div>
+    );
+  }
   return (
     <div style={{
       width: size, height: size, borderRadius: 999,
@@ -285,6 +305,8 @@ export function Avatar({ name, color, size = 40, initial }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontFamily: '"Space Grotesk", system-ui', fontWeight: 700, fontSize: size * 0.4,
       flexShrink: 0,
+      border: baseBorder,
+      ...style,
     }}>{ini}</div>
   );
 }

@@ -105,11 +105,19 @@ const MatchesList = () => {
         {/* Members */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           {room.members.map((m, i) => (
-            <div key={m.id} style={{
-              width: 30, height: 30, borderRadius: 999, background: memberColor(i),
-              color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 700, border: '2px solid #0A070F', marginLeft: i === 0 ? 0 : -10,
-            }}>{(m.name || '?').charAt(0).toUpperCase()}</div>
+            <div key={m.id} style={{ marginLeft: i === 0 ? 0 : -10, border: '2px solid #0A070F', borderRadius: 999 }}>
+              {m.avatarUrl ? (
+                <div style={{ width: 30, height: 30, borderRadius: 999, overflow: 'hidden', background: '#1a0f2e' }}>
+                  <img src={m.avatarUrl} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                </div>
+              ) : (
+                <div style={{
+                  width: 30, height: 30, borderRadius: 999, background: memberColor(i),
+                  color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 12, fontWeight: 700,
+                }}>{(m.name || '?').charAt(0).toUpperCase()}</div>
+              )}
+            </div>
           ))}
           <span style={{ marginLeft: 8, fontSize: 12, color: FP.textMuted }}>
             {room.members.map(m => m.name).join(', ')}
@@ -305,11 +313,19 @@ function MatchCard({ match, members, onClick, onDelete }) {
           {/* Member avatars */}
           <div style={{ display: 'flex', marginTop: 7 }}>
             {members.map((mem, i) => (
-              <div key={mem.id} style={{
-                width: 20, height: 20, borderRadius: 999, background: memberColor(i),
-                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 9, fontWeight: 700, border: '1.5px solid #0A070F', marginLeft: i === 0 ? 0 : -6,
-              }}>{(mem.name || '?').charAt(0).toUpperCase()}</div>
+              <div key={mem.id} style={{ marginLeft: i === 0 ? 0 : -6, border: '1.5px solid #0A070F', borderRadius: 999 }}>
+                {mem.avatarUrl ? (
+                  <div style={{ width: 20, height: 20, borderRadius: 999, overflow: 'hidden', background: '#1a0f2e' }}>
+                    <img src={mem.avatarUrl} alt={mem.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                  </div>
+                ) : (
+                  <div style={{
+                    width: 20, height: 20, borderRadius: 999, background: memberColor(i),
+                    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 9, fontWeight: 700,
+                  }}>{(mem.name || '?').charAt(0).toUpperCase()}</div>
+                )}
+              </div>
             ))}
           </div>
         </div>

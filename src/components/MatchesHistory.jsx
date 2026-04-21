@@ -146,11 +146,19 @@ function RoomCard({ room, onOpen, onResume }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8 }}>
             <div style={{ display: 'flex' }}>
               {(room.members || []).slice(0, 6).map((m, i) => (
-                <div key={m.id} style={{
-                  width: 24, height: 24, borderRadius: 999, background: memberColor(i), color: '#fff',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, fontWeight: 700, border: '2px solid #0A070F', marginLeft: i === 0 ? 0 : -8,
-                }}>{(m.name || '?').charAt(0).toUpperCase()}</div>
+                <div key={m.id} style={{ marginLeft: i === 0 ? 0 : -8, border: '2px solid #0A070F', borderRadius: 999 }}>
+                  {m.avatarUrl ? (
+                    <div style={{ width: 24, height: 24, borderRadius: 999, overflow: 'hidden', background: '#1a0f2e' }}>
+                      <img src={m.avatarUrl} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                    </div>
+                  ) : (
+                    <div style={{
+                      width: 24, height: 24, borderRadius: 999, background: memberColor(i), color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 10, fontWeight: 700,
+                    }}>{(m.name || '?').charAt(0).toUpperCase()}</div>
+                  )}
+                </div>
               ))}
             </div>
             <span style={{ fontSize: 12, color: FP.textMuted }}>

@@ -53,7 +53,7 @@ const JoinScreen = () => {
     if (!room) room = await hydrateRoomByCode(codeToUse);
     if (!room) { setErr('Sala no encontrada.'); setLoading(false); return; }
     try {
-      addMember(room.id, { id: me.id, name: me.name });
+      addMember(room.id, { id: me.id, name: me.name, avatarUrl: me.avatarUrl || null });
       navigate(`/room/${room.id}/lobby`, { replace: true });
     } catch (e) {
       setErr(e.message || 'No se pudo entrar.');
