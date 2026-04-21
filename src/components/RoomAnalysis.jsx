@@ -53,87 +53,268 @@ function GenreBar({ genre, maxCount, delay = 0 }) {
 // ── Share card (captured as image) ───────────────────────────────────────────
 const ShareCard = React.forwardRef(function ShareCard({ analysis, room }, ref) {
   if (!analysis) return null;
-  const { compatibilityPct, compatTier, totalMatches, memberStats, topGenres } = analysis;
+  const { compatibilityPct, compatTier, totalMatches, memberStats, topGenres, bestMatch } = analysis;
+  const W = 390;
+
+  // Avatar helper
+  const MemberAvatar = ({ ms, idx, size = 64 }) => ms.member.avatarUrl ? (
+    <div style={{ width: size, height: size, borderRadius: 999, overflow: 'hidden', background: '#1a0f2e', flexShrink: 0 }}>
+      <img src={ms.member.avatarUrl} alt={ms.member.name} crossOrigin="anonymous"
+           style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+    </div>
+  ) : (
+    <div style={{
+      width: size, height: size, borderRadius: 999, flexShrink: 0,
+      background: memberColor(idx), color: '#fff',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: size * 0.38, fontWeight: 900,
+    }}>{(ms.member.name || '?')[0].toUpperCase()}</div>
+  );
+
   return (
     <div ref={ref} style={{
-      width: 380, minHeight: 580,
-      background: 'linear-gradient(145deg, #1a0533 0%, #0B0420 50%, #07050E 100%)',
-      borderRadius: 28, padding: '36px 28px',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
-      fontFamily: '"Space Grotesk", system-ui',
-      /* Off-screen but fully rendered — html2canvas needs it in the document */
+      width: W, height: 693,              // 9:16 portrait — perfect for Stories
+      background: '#0B0315',
       position: 'fixed', top: 0, left: '-420px',
       zIndex: -1, pointerEvents: 'none',
+      fontFamily: '"Space Grotesk", system-ui',
+      overflow: 'hidden',
+      display: 'flex', flexDirection: 'column',
     }}>
-      {/* Logo */}
-      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 4, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>
-        🎬 FlickPick Wrapped
-      </div>
 
-      {/* Big % */}
-      <div style={{ textAlign: 'center' }}>
+      {/* ── Ambient glows — painted first so text sits on top ── */}
+      <div style={{
+        position: 'absolute', top: -60, left: -60,
+        width: 340, height: 340, borderRadius: 999,
+        background: 'radial-gradient(circle, rgba(191,90,242,0.30) 0%, transparent 70%)',
+        pointerEvents: 'none',
+      }}/>
+      <div style={{
+        position: 'absolute', top: 180, right: -80,
+        width: 280, height: 280, borderRadius: 999,
+        background: 'radial-gradient(circle, rgba(255,59,107,0.22) 0%, transparent 70%)',
+        pointerEvents: 'none',
+      }}/>
+      <div style={{
+        position: 'absolute', bottom: 120, left: -40,
+        width: 260, height: 260, borderRadius: 999,
+        background: 'radial-gradient(circle, rgba(78,255,214,0.12) 0%, transparent 70%)',
+        pointerEvents: 'none',
+      }}/>
+
+      {/* ── HEADER ─────────────────────────────────────────── */}
+      <div style={{
+        position: 'relative', zIndex: 2,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '28px 28px 0',
+      }}>
         <div style={{
-          fontFamily: '"Syne", sans-serif', fontSize: 96, fontWeight: 900, lineHeight: 0.9,
-          background: compatTier.bg,
-          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-        }}>{compatibilityPct}%</div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginTop: 8, letterSpacing: 1 }}>
-          COMPATIBILIDAD
+          fontFamily: '"Syne", sans-serif',
+          fontSize: 22, fontWeight: 900, letterSpacing: -0.5,
+          color: '#fff',
+        }}>
+          <span style={{ color: '#FF3B6B' }}>Flick</span>Pick
         </div>
-        <div style={{ fontSize: 18, fontWeight: 800, color: '#fff', marginTop: 6 }}>
-          {compatTier.emoji} {compatTier.label}
+        <div style={{
+          padding: '5px 12px', borderRadius: 999,
+          background: 'linear-gradient(90deg, rgba(255,59,107,0.25), rgba(191,90,242,0.25))',
+          border: '1px solid rgba(255,59,107,0.4)',
+          fontSize: 10, fontWeight: 800, letterSpacing: 2.5,
+          color: 'rgba(255,255,255,0.9)', textTransform: 'uppercase',
+        }}>WRAPPED '25</div>
+      </div>
+
+      {/* ── HERO — big % ───────────────────────────────────── */}
+      <div style={{
+        position: 'relative', zIndex: 2,
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        marginTop: 30,
+      }}>
+        {/* Glowing ring behind the number */}
+        <div style={{
+          position: 'relative',
+          width: 200, height: 200,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {/* Ring */}
+          <div style={{
+            position: 'absolute', inset: 0, borderRadius: 999,
+            background: `conic-gradient(#FF3B6B 0deg, #BF5AF2 ${compatibilityPct * 3.6 * 0.6}deg, rgba(255,255,255,0.06) ${compatibilityPct * 3.6 * 0.6}deg)`,
+            padding: 4,
+          }}>
+            <div style={{
+              width: '100%', height: '100%', borderRadius: 999,
+              background: '#0B0315',
+            }}/>
+          </div>
+          {/* Number */}
+          <div style={{
+            position: 'relative', zIndex: 1,
+            textAlign: 'center',
+          }}>
+            <div style={{
+              fontFamily: '"Syne", sans-serif',
+              fontSize: 76, fontWeight: 900, lineHeight: 1,
+              letterSpacing: -4,
+              color: '#fff',
+            }}>{compatibilityPct}<span style={{ fontSize: 32, letterSpacing: -1 }}>%</span></div>
+          </div>
+        </div>
+
+        {/* Tier */}
+        <div style={{ marginTop: 14, textAlign: 'center' }}>
+          <div style={{
+            fontFamily: '"Syne", sans-serif',
+            fontSize: 24, fontWeight: 900,
+            color: '#fff', letterSpacing: -0.5,
+          }}>{compatTier.emoji} {compatTier.label}</div>
+          <div style={{
+            marginTop: 5, fontSize: 13, fontWeight: 600,
+            color: 'rgba(255,255,255,0.45)', letterSpacing: 0.2,
+          }}>COMPATIBILIDAD CINEMATOGRÁFICA</div>
         </div>
       </div>
 
-      {/* Members */}
-      <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-        {memberStats.map((ms, i) => (
-          <div key={ms.member.id} style={{ textAlign: 'center' }}>
-            {ms.member.avatarUrl ? (
+      {/* ── MEMBERS ────────────────────────────────────────── */}
+      <div style={{
+        position: 'relative', zIndex: 2,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        gap: 0, marginTop: 28, padding: '0 28px',
+      }}>
+        {memberStats.slice(0, 2).map((ms, i) => (
+          <React.Fragment key={ms.member.id}>
+            {i === 1 && (
               <div style={{
-                width: 48, height: 48, borderRadius: 999, overflow: 'hidden',
-                background: '#1a0f2e', margin: '0 auto',
-              }}>
-                <img src={ms.member.avatarUrl} alt={ms.member.name} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-              </div>
-            ) : (
-              <div style={{
-                width: 48, height: 48, borderRadius: 999,
-                background: memberColor(i), color: '#fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 18, fontWeight: 800, margin: '0 auto',
-              }}>{(ms.member.name || '?')[0].toUpperCase()}</div>
+                flex: 1, height: 1,
+                background: 'linear-gradient(90deg, rgba(255,59,107,0.6), rgba(191,90,242,0.6))',
+                margin: '0 12px', marginBottom: 28,
+              }}/>
             )}
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>{ms.member.name}</div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: ms.personality.color }}>{ms.personality.emoji} {ms.personality.label}</div>
-          </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                width: 68, height: 68, borderRadius: 999, margin: '0 auto',
+                border: `3px solid ${i === 0 ? '#FF3B6B' : '#BF5AF2'}`,
+                overflow: 'hidden',
+                background: memberColor(i),
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {ms.member.avatarUrl ? (
+                  <img src={ms.member.avatarUrl} alt={ms.member.name} crossOrigin="anonymous"
+                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                ) : (
+                  <span style={{ fontSize: 26, fontWeight: 900, color: '#fff' }}>
+                    {(ms.member.name || '?')[0].toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div style={{ marginTop: 7, fontSize: 13, fontWeight: 800, color: '#fff' }}>
+                {ms.member.name}
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: ms.personality.color, marginTop: 2 }}>
+                {ms.personality.emoji} {ms.personality.label}
+              </div>
+            </div>
+          </React.Fragment>
         ))}
       </div>
 
-      {/* Stats */}
+      {/* ── STATS ROW ──────────────────────────────────────── */}
       <div style={{
-        width: '100%', borderRadius: 16,
-        background: 'rgba(255,255,255,0.05)',
-        border: '1px solid rgba(255,255,255,0.1)',
-        padding: '14px 18px',
-        display: 'flex', gap: 20, justifyContent: 'center',
+        position: 'relative', zIndex: 2,
+        display: 'flex', gap: 10, padding: '0 28px', marginTop: 24,
       }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 30, fontWeight: 900, color: '#FF3B6B' }}>{totalMatches}</div>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>MATCHES</div>
+        {/* Matches */}
+        <div style={{
+          flex: 1, borderRadius: 16, padding: '14px 10px',
+          background: 'rgba(255,59,107,0.12)',
+          border: '1px solid rgba(255,59,107,0.3)',
+          textAlign: 'center',
+        }}>
+          <div style={{
+            fontFamily: '"Syne", sans-serif',
+            fontSize: 36, fontWeight: 900, color: '#FF3B6B', lineHeight: 1,
+          }}>{totalMatches}</div>
+          <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,0.5)', marginTop: 4, letterSpacing: 1.5 }}>
+            MATCHES
+          </div>
         </div>
+
+        {/* Genre */}
         {topGenres[0] && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 26 }}>{topGenres[0].emoji}</div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', fontWeight: 600, maxWidth: 60, lineHeight: 1.2 }}>{topGenres[0].name.toUpperCase()}</div>
+          <div style={{
+            flex: 1, borderRadius: 16, padding: '14px 10px',
+            background: 'rgba(191,90,242,0.12)',
+            border: '1px solid rgba(191,90,242,0.3)',
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 30, lineHeight: 1 }}>{topGenres[0].emoji}</div>
+            <div style={{
+              fontSize: 11, fontWeight: 800, color: '#BF5AF2',
+              marginTop: 4, lineHeight: 1.2,
+            }}>{topGenres[0].name.toUpperCase()}</div>
+          </div>
+        )}
+
+        {/* Best match */}
+        {bestMatch && bestMatch.poster_path && (
+          <div style={{
+            flex: 1, borderRadius: 16, overflow: 'hidden',
+            border: '1px solid rgba(78,255,214,0.3)',
+            position: 'relative',
+          }}>
+            <img
+              src={posterUrl(bestMatch.poster_path, 'w185')}
+              crossOrigin="anonymous"
+              alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'linear-gradient(0deg, rgba(0,0,0,0.75) 0%, transparent 55%)',
+              display: 'flex', alignItems: 'flex-end', padding: '6px 7px',
+            }}>
+              <div style={{ fontSize: 9, fontWeight: 800, color: '#4EFFD6', letterSpacing: 1 }}>TOP PELI</div>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Footer */}
-      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', fontWeight: 600, letterSpacing: 2, marginTop: 'auto' }}>
-        flickpick.app
+      {/* ── SPACER ─────────────────────────────────────────── */}
+      <div style={{ flex: 1 }}/>
+
+      {/* ── CTA SECTION ────────────────────────────────────── */}
+      <div style={{
+        position: 'relative', zIndex: 2,
+        background: 'linear-gradient(135deg, rgba(255,59,107,0.18) 0%, rgba(191,90,242,0.18) 100%)',
+        borderTop: '1px solid rgba(255,255,255,0.08)',
+        padding: '20px 28px 28px',
+      }}>
+        <div style={{
+          fontSize: 11, fontWeight: 700,
+          color: 'rgba(255,255,255,0.4)', letterSpacing: 2,
+          textTransform: 'uppercase', marginBottom: 8,
+        }}>¿Aún no lo has probado?</div>
+        <div style={{
+          fontFamily: '"Syne", sans-serif',
+          fontSize: 20, fontWeight: 900, color: '#fff',
+          lineHeight: 1.15, letterSpacing: -0.5,
+        }}>Descubre con quién tienes{'\n'}mejor gusto cinematográfico</div>
+        <div style={{
+          marginTop: 14,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <div style={{
+            padding: '8px 18px', borderRadius: 999,
+            background: 'linear-gradient(90deg, #FF3B6B, #BF5AF2)',
+            fontSize: 13, fontWeight: 800, color: '#fff',
+            letterSpacing: 0.2,
+          }}>flickpick.app →</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
+            Gratis · Sin registro
+          </div>
+        </div>
       </div>
+
     </div>
   );
 });
