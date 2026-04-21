@@ -6,7 +6,6 @@ import { FP, memberColor } from '@/lib/fp';
 import { getRoom, subscribe, hydrateRoomById } from '@/lib/roomStore';
 import { posterUrl } from '@/lib/tmdb';
 import { computeRoomAnalysis } from '@/lib/roomAnalysis';
-import html2canvas from 'html2canvas'
 
 // ── Animated counter ──────────────────────────────────────────────────────────
 function AnimatedNumber({ target, duration = 1200, suffix = '' }) {
@@ -172,7 +171,13 @@ export default function RoomAnalysis() {
     setSharing(true);
     try {
       // Try html2canvas to capture the share card as an image
-      const html2canvas = (await import('html2canvas')).default;
+      const html2canvas = await new Promise((resolve) => {
+        if (window.html2canvas) return resolve(window.html2canvas);
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload = () => resolve(window.html2canvas);
+        document.head.appendChild(s);
+      });
       const canvas = await html2canvas(shareCardRef.current, {
         backgroundColor: '#0B0420',
         scale: 2,
