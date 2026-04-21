@@ -224,14 +224,22 @@ export default defineConfig({
 			'@': path.resolve(__dirname, './src'),
 		},
 	},
-	build: {
-		rollupOptions: {
-			external: [
-				'@babel/parser',
-				'@babel/traverse',
-				'@babel/generator',
-				'@babel/types'
-			]
+build: {
+    rollupOptions: {
+      external: [
+        '@babel/parser',
+        '@babel/traverse',
+        '@babel/generator',
+        '@babel/types'
+      ]
+    },
+    commonjsOptions: {
+      include: [/html2canvas/, /node_modules/],
+    },
+  },
+  optimizeDeps: {
+    include: ['html2canvas'],
+  },
 		}
 	}
 });
