@@ -148,6 +148,10 @@ export default function RoomAnalysis() {
   const [loading, setLoading]   = useState(!getRoom(roomId));
   const [visible, setVisible]   = useState(false);
   const [sharing, setSharing]   = useState(false);
+  // Pre-generated blob — ready before the user taps so navigator.share()
+  // fires immediately inside the gesture handler (required by iOS Safari).
+  const shareBlobRef            = useRef(null);
+  const [imageReady, setImageReady] = useState(false);
 
   // Load room
   useEffect(() => {
@@ -168,55 +172,84 @@ export default function RoomAnalysis() {
 
   const analysis = room ? computeRoomAnalysis(room) : null;
 
-  // ── Share ─────────────────────────────────────────────────────────────────
-  const handleShare = async () => {
-    if (!shareCardRef.current || !analysis) return;
+  // ── Pre-generate share image in background after screen becomes visible ───
+  // iOS requires navigator.share() to fire synchronously inside a tap handler.
+  // We generate the PNG here so the tap handler just calls share() with the
+  // already-ready blob — no async chain, no gesture-context timeout.
+  useEffect(() => {
+    if (!visible || !shareCardRef.current || !analysis) return;
+    let cancelled = false;
+
+    const generate = async () => {
+      try {
+        await new Promise(r => setTimeout(r, 600)); // let entry animations finish
+        if (cancelled) return;
+
+        const el = shareCardRef.current;
+        el.style.left = '0px';
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        if (cancelled) { el.style.left = '-420px'; return; }
+
+        const { default: html2canvas } = await import('html2canvas');
+        const canvas = await html2canvas(el, {
+          backgroundColor: '#0B0420',
+          scale: 2,
+          useCORS: true,
+          allowTaint: false,
+          logging: false,
+          width: el.offsetWidth,
+          height: el.offsetHeight,
+        });
+        el.style.left = '-420px';
+        if (cancelled) return;
+
+        const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+        if (cancelled || !blob) return;
+
+        shareBlobRef.current = blob;
+        setImageReady(true);
+      } catch {
+        // silently ignore — share will fall back to text
+      }
+    };
+
+    generate();
+    return () => { cancelled = true; };
+  }, [visible, analysis]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Share handler — called directly on tap, no heavy async work here ──────
+  const handleShare = () => {
+    if (!analysis) return;
     setSharing(true);
-    const textFallback = `🎬 FlickPick Wrapped\n${analysis.compatibilityPct}% compatibilidad · ${analysis.compatTier.emoji} ${analysis.compatTier.label}\n${analysis.totalMatches} matches juntos 🍿`;
-    try {
-      // Briefly move card to x=0 so html2canvas can paint it correctly
-      const el = shareCardRef.current;
-      el.style.left = '0px';
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); // let browser paint
+    const text = `🎬 FlickPick Wrapped\n${analysis.compatibilityPct}% compatibilidad · ${analysis.compatTier.emoji} ${analysis.compatTier.label}\n${analysis.totalMatches} matches juntos 🍿`;
 
-      const { default: html2canvas } = await import('html2canvas');
-      const canvas = await html2canvas(el, {
-        backgroundColor: '#0B0420',
-        scale: 2,
-        useCORS: true,
-        allowTaint: false,
-        logging: false,
-        x: 0, y: 0,
-        width: el.offsetWidth,
-        height: el.offsetHeight,
-      });
+    const blob = shareBlobRef.current;
 
-      el.style.left = '-420px'; // hide again
-
-      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-      if (!blob) throw new Error('canvas empty');
-
+    if (blob) {
       const file = new File([blob], 'flickpick-wrapped.png', { type: 'image/png' });
-
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ title: 'FlickPick Wrapped', text: textFallback, files: [file] }).catch(() => {});
-      } else if (navigator.share) {
-        await navigator.share({ title: 'FlickPick Wrapped', text: textFallback }).catch(() => {});
-      } else {
-        // Desktop: trigger download
+        navigator.share({ title: 'FlickPick Wrapped', text, files: [file] })
+          .catch(() => {})
+          .finally(() => setSharing(false));
+        return;
+      }
+      if (!navigator.share) {
+        // Desktop: download
         const url = URL.createObjectURL(blob);
-        const a   = Object.assign(document.createElement('a'), { href: url, download: 'flickpick-wrapped.png' });
-        a.click();
+        Object.assign(document.createElement('a'), { href: url, download: 'flickpick-wrapped.png' }).click();
         URL.revokeObjectURL(url);
+        setSharing(false);
+        return;
       }
-    } catch {
-      // Last resort: plain text share / clipboard
-      if (navigator.share) {
-        navigator.share({ title: 'FlickPick Wrapped', text: textFallback }).catch(() => {});
-      } else {
-        navigator.clipboard?.writeText(textFallback);
-      }
-    } finally {
+    }
+
+    // Fallback: text-only share or clipboard
+    if (navigator.share) {
+      navigator.share({ title: 'FlickPick Wrapped', text })
+        .catch(() => {})
+        .finally(() => setSharing(false));
+    } else {
+      navigator.clipboard?.writeText(text);
       setSharing(false);
     }
   };
@@ -552,13 +585,13 @@ export default function RoomAnalysis() {
         }}>
           <button
             onClick={handleShare}
-            disabled={sharing}
+            disabled={sharing || !imageReady}
             style={{
               width: '100%', height: 56, borderRadius: 999,
-              background: sharing ? 'rgba(255,59,107,0.4)' : FP.flame,
+              background: (sharing || !imageReady) ? 'rgba(255,59,107,0.4)' : FP.flame,
               border: 'none', color: '#fff',
               fontFamily: '"Space Grotesk"', fontWeight: 700, fontSize: 16,
-              cursor: sharing ? 'default' : 'pointer',
+              cursor: (sharing || !imageReady) ? 'default' : 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
               boxShadow: '0 8px 24px rgba(255,59,107,0.35)',
               transition: 'background 0.2s',
@@ -569,7 +602,14 @@ export default function RoomAnalysis() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 1s linear infinite' }}>
                   <circle cx="12" cy="12" r="9" stroke="#fff" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10"/>
                 </svg>
-                Generando imagen…
+                Compartiendo…
+              </>
+            ) : !imageReady ? (
+              <>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 1s linear infinite', opacity: 0.7 }}>
+                  <circle cx="12" cy="12" r="9" stroke="#fff" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10"/>
+                </svg>
+                Preparando imagen…
               </>
             ) : (
               <>
