@@ -41,7 +41,9 @@ const MovieSwiper = () => {
   const startTimeRef    = useRef(0);
   const fetchedRef      = useRef(false);
   const votesSinceRerank = useRef(0);
-  const pendingMatchRef = useRef(null);   // holds a match found during swipe animation
+  const pendingMatchRef  = useRef(null);   // holds a match found during swipe animation
+  const justMatchedRef   = useRef(null);   // movieId we just matched ourselves (skip subscription trigger)
+  const prevMatchIdsRef  = useRef(null);   // snapshot of match IDs from last render cycle
 
   // ── room subscription ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -50,6 +52,34 @@ const MovieSwiper = () => {
     window.addEventListener('storage', onStorage);
     return () => { unsub?.(); window.removeEventListener('storage', onStorage); };
   }, [roomId]);
+
+  // ── Bug 2 fix: detect new matches arriving via subscription (first voter) ─
+  useEffect(() => {
+    if (!room || !me) return;
+
+    const currentMatches = room.matches || [];
+    const currentIds     = new Set(currentMatches.map(m => m.movieId));
+
+    if (prevMatchIdsRef.current !== null) {
+      for (const match of currentMatches) {
+        if (!prevMatchIdsRef.current.has(match.movieId)) {
+          // A brand-new match appeared via remote sync.
+          // If we were the one who triggered it, skip (already shown by swipe handler).
+          if (justMatchedRef.current === match.movieId) {
+            justMatchedRef.current = null;
+            continue;
+          }
+          // Show the overlay if this user had already liked this movie.
+          const myVotes = room.votes?.[me.id] || {};
+          if (myVotes[match.movieId] === 'like') {
+            setMatchMovie(match.movie);
+          }
+        }
+      }
+    }
+
+    prevMatchIdsRef.current = currentIds;
+  }, [room, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const hydrate = async () => {
@@ -159,7 +189,10 @@ const MovieSwiper = () => {
         roomId, me.id, movie, dir === 'right' ? 'like' : 'skip'
       );
       setRoom(updated);
-      if (madeMatch) madeMatchMovie = movie;
+      if (madeMatch) {
+        madeMatchMovie = movie;
+        justMatchedRef.current = movie.id; // prevent subscription from double-showing
+      }
 
       votesSinceRerank.current += 1;
       if (votesSinceRerank.current >= RERANK_EVERY) {
@@ -235,6 +268,11 @@ const MovieSwiper = () => {
   }
   if (room.status === 'lobby') {
     navigate(`/room/${roomId}/lobby`, { replace: true });
+    return null;
+  }
+  // Bug 1 fix: when host closes the room, all members land on the analysis screen
+  if (room.status === 'ended') {
+    navigate(`/room/${roomId}/analysis`, { replace: true });
     return null;
   }
 
