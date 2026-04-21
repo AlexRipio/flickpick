@@ -103,7 +103,7 @@ const MatchesList = () => {
         </p>
 
         {/* Members */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
           {room.members.map((m, i) => (
             <div key={m.id} style={{
               width: 30, height: 30, borderRadius: 999, background: memberColor(i),
@@ -115,6 +115,40 @@ const MatchesList = () => {
             {room.members.map(m => m.name).join(', ')}
           </span>
         </div>
+
+        {/* FlickPick Wrapped CTA */}
+        <button
+          onClick={() => navigate(`/room/${roomId}/analysis`)}
+          style={{
+            width: '100%', marginBottom: 20,
+            padding: '14px 20px', borderRadius: 18,
+            background: 'linear-gradient(135deg, rgba(139,92,246,0.18) 0%, rgba(255,59,107,0.15) 100%)',
+            border: '1px solid rgba(139,92,246,0.35)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            cursor: 'pointer', textAlign: 'left',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 12,
+              background: 'linear-gradient(135deg, #8B5CF6, #FF3B6B)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 20, flexShrink: 0,
+            }}>📊</div>
+            <div>
+              <div style={{
+                fontFamily: '"Syne", "Space Grotesk", sans-serif',
+                fontSize: 15, fontWeight: 800, color: '#fff',
+              }}>FlickPick Wrapped</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>
+                Compatibilidad, géneros y más
+              </div>
+            </div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M9 18l6-6-6-6" stroke="rgba(139,92,246,0.8)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
 
         {/* Empty state */}
         {matches.length === 0 && (
@@ -158,7 +192,7 @@ const MatchesList = () => {
           onClose={() => setSelected(null)}
           onSkip={() => setSelected(null)}
           skipLabel="Cerrar"
-          likeLabel="❤️ Guardar"
+          likeLabel="Guardar"
           onLike={() => {
             if (!isInWatchlist(selected.id)) toggleWatchlist(selected);
             setSelected(null);

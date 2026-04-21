@@ -274,7 +274,7 @@ const MovieSwiper = () => {
               onClick={() => {
                 if (window.confirm('¿Cerrar la sala para todos?')) {
                   closeRoom(roomId);
-                  navigate('/home', { replace: true });
+                  navigate(`/room/${roomId}/analysis`, { replace: true });
                 }
               }}
               size={36} ariaLabel="Cerrar sala"

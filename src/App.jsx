@@ -17,6 +17,7 @@ import TrendingScreen from '@/components/TrendingScreen';
 import AuthCallback from '@/components/AuthCallback';
 import MatchesHistory from '@/components/MatchesHistory';
 import WatchlistScreen from '@/components/WatchlistScreen';
+import RoomAnalysis from '@/components/RoomAnalysis';
 
 function App() {
   return (
@@ -49,6 +50,7 @@ function App() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/matches" element={<MatchesHistory />} />
           <Route path="/watchlist" element={<WatchlistScreen />} />
+          <Route path="/room/:id/analysis" element={<RoomAnalysis />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
