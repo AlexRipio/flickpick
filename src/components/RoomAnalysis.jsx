@@ -61,7 +61,9 @@ const ShareCard = React.forwardRef(function ShareCard({ analysis, room }, ref) {
       borderRadius: 28, padding: '36px 28px',
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
       fontFamily: '"Space Grotesk", system-ui',
-      position: 'absolute', left: '-9999px', top: 0,
+      /* Off-screen but fully rendered — html2canvas needs it in the document */
+      position: 'fixed', top: 0, left: '-420px',
+      zIndex: -1, pointerEvents: 'none',
     }}>
       {/* Logo */}
       <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 4, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>
@@ -168,52 +170,53 @@ export default function RoomAnalysis() {
 
   // ── Share ─────────────────────────────────────────────────────────────────
   const handleShare = async () => {
+    if (!shareCardRef.current || !analysis) return;
     setSharing(true);
+    const textFallback = `🎬 FlickPick Wrapped\n${analysis.compatibilityPct}% compatibilidad · ${analysis.compatTier.emoji} ${analysis.compatTier.label}\n${analysis.totalMatches} matches juntos 🍿`;
     try {
-      // Try html2canvas to capture the share card as an image
-      const html2canvas = await new Promise((resolve) => {
-        if (window.html2canvas) return resolve(window.html2canvas);
-        const s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-        s.onload = () => resolve(window.html2canvas);
-        document.head.appendChild(s);
-      });
-      const canvas = await html2canvas(shareCardRef.current, {
+      // Briefly move card to x=0 so html2canvas can paint it correctly
+      const el = shareCardRef.current;
+      el.style.left = '0px';
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); // let browser paint
+
+      const { default: html2canvas } = await import('html2canvas');
+      const canvas = await html2canvas(el, {
         backgroundColor: '#0B0420',
         scale: 2,
         useCORS: true,
+        allowTaint: false,
         logging: false,
+        x: 0, y: 0,
+        width: el.offsetWidth,
+        height: el.offsetHeight,
       });
 
-      canvas.toBlob(async (blob) => {
-        const file = new File([blob], 'flickpick-wrapped.png', { type: 'image/png' });
-        const text = `🎬 ${analysis.compatibilityPct}% de compatibilidad cinematográfica\n${analysis.compatTier.emoji} ${analysis.compatTier.label}\n\n${analysis.totalMatches} matches juntos 🍿`;
+      el.style.left = '-420px'; // hide again
 
-        if (navigator.canShare?.({ files: [file] })) {
-          try {
-            await navigator.share({ title: 'FlickPick Wrapped', text, files: [file] });
-          } catch {}
-        } else if (navigator.share) {
-          await navigator.share({ title: 'FlickPick Wrapped', text }).catch(() => {});
-        } else {
-          // Download
-          const url = URL.createObjectURL(blob);
-          const a   = document.createElement('a');
-          a.href     = url;
-          a.download = 'flickpick-wrapped.png';
-          a.click();
-          URL.revokeObjectURL(url);
-        }
-        setSharing(false);
-      }, 'image/png');
-    } catch {
-      // Fallback: share text only
-      const text = `🎬 FlickPick Wrapped\n${analysis?.compatibilityPct}% compatibilidad · ${analysis?.compatTier.emoji} ${analysis?.compatTier.label}\n${analysis?.totalMatches} matches juntos 🍿`;
-      if (navigator.share) {
-        await navigator.share({ title: 'FlickPick Wrapped', text }).catch(() => {});
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      if (!blob) throw new Error('canvas empty');
+
+      const file = new File([blob], 'flickpick-wrapped.png', { type: 'image/png' });
+
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: 'FlickPick Wrapped', text: textFallback, files: [file] }).catch(() => {});
+      } else if (navigator.share) {
+        await navigator.share({ title: 'FlickPick Wrapped', text: textFallback }).catch(() => {});
       } else {
-        navigator.clipboard?.writeText(text);
+        // Desktop: trigger download
+        const url = URL.createObjectURL(blob);
+        const a   = Object.assign(document.createElement('a'), { href: url, download: 'flickpick-wrapped.png' });
+        a.click();
+        URL.revokeObjectURL(url);
       }
+    } catch {
+      // Last resort: plain text share / clipboard
+      if (navigator.share) {
+        navigator.share({ title: 'FlickPick Wrapped', text: textFallback }).catch(() => {});
+      } else {
+        navigator.clipboard?.writeText(textFallback);
+      }
+    } finally {
       setSharing(false);
     }
   };
