@@ -51,204 +51,306 @@ function GenreBar({ genre, maxCount, delay = 0 }) {
 }
 
 // ── Share card (captured as image) ───────────────────────────────────────────
+//  Canvas: 390 × 693 (9:16 Stories)  ·  Outer gutter: 24px
+//  Layout (y-positions):
+//    24→56    Header (32)
+//    72→308   Hero (236)
+//    324→412  Couple strip (88)
+//    428→552  Stats triptych (124)
+//    552→693  Footer CTA (141)
 const ShareCard = React.forwardRef(function ShareCard({ analysis }, ref) {
   if (!analysis) return null;
   const { compatibilityPct, compatTier, totalMatches, memberStats, topGenres, bestMatch } = analysis;
 
-  const avatarStyle = (ms, i, size) => ({
-    width: size, height: size, borderRadius: 999, overflow: 'hidden',
-    background: memberColor(i),
-    border: `3px solid ${i === 0 ? '#FF3B6B' : '#BF5AF2'}`,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0,
-  });
+  // Brand gradient — used throughout for cohesion
+  const BRAND_GRADIENT = 'linear-gradient(135deg, #FF6B4A 0%, #FF3B6B 50%, #9B3BFF 100%)';
+  const members = memberStats.slice(0, 2);
+
+  // Wordmark — transparent, gradient on "Pick"
+  const Wordmark = ({ size = 22 }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: size * 0.36 }}>
+      <div style={{
+        width: size * 1.36, height: size * 1.36, borderRadius: size * 0.36,
+        background: BRAND_GRADIENT,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 6px 18px rgba(255,59,107,0.5)',
+      }}>
+        <span style={{ fontFamily: '"Syne", sans-serif', fontSize: size * 0.86, fontWeight: 900, color: '#fff', lineHeight: 1 }}>F</span>
+      </div>
+      <span style={{
+        fontFamily: '"Syne", sans-serif', fontSize: size, fontWeight: 900,
+        color: '#fff', letterSpacing: -0.6, lineHeight: 1,
+      }}>
+        Flick<span style={{ color: '#FF6B4A' }}>Pick</span>
+      </span>
+    </div>
+  );
 
   return (
     <div ref={ref} style={{
-      /* 9:16 Stories format, fully off-screen until capture */
       width: 390, height: 693,
       position: 'fixed', top: 0, left: '-420px',
       zIndex: -1, pointerEvents: 'none',
       overflow: 'hidden',
       fontFamily: '"Space Grotesk", system-ui',
-      /* Rich dark background */
-      background: 'linear-gradient(155deg, #1E0840 0%, #0D0520 40%, #07040F 100%)',
+      background: '#0A0616',
+      color: '#fff',
     }}>
+      {/* Deep background layers (dark → purple veil → accent glows) */}
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, #140628 0%, #0B0520 45%, #07040F 100%)' }}/>
+      <div style={{ position: 'absolute', top: -140, left: -120, width: 380, height: 380, borderRadius: 999,
+                    background: 'radial-gradient(circle, rgba(155,59,255,0.55) 0%, transparent 65%)', filter: 'blur(10px)' }}/>
+      <div style={{ position: 'absolute', top: 180, right: -140, width: 360, height: 360, borderRadius: 999,
+                    background: 'radial-gradient(circle, rgba(255,59,107,0.45) 0%, transparent 65%)', filter: 'blur(10px)' }}/>
+      <div style={{ position: 'absolute', top: 380, left: -80, width: 260, height: 260, borderRadius: 999,
+                    background: 'radial-gradient(circle, rgba(78,255,214,0.18) 0%, transparent 70%)', filter: 'blur(8px)' }}/>
 
-      {/* ── BG accent blobs ─────────────────────────────── */}
-      <div style={{ position: 'absolute', top: -80, left: -80, width: 320, height: 320, borderRadius: 999, background: 'radial-gradient(circle, rgba(191,90,242,0.35) 0%, transparent 65%)', pointerEvents: 'none' }}/>
-      <div style={{ position: 'absolute', top: 260, right: -60, width: 260, height: 260, borderRadius: 999, background: 'radial-gradient(circle, rgba(255,59,107,0.28) 0%, transparent 65%)', pointerEvents: 'none' }}/>
-
-      {/* ══════════════════════════════════════════════════
-          SECTION 1 — LOGO  (top: 0, height: ~88px)
-      ══════════════════════════════════════════════════ */}
+      {/* ══════════ HEADER  y=24, h=32 ══════════ */}
       <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: 88,
+        position: 'absolute', top: 24, left: 24, right: 24, height: 32,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 26px',
       }}>
-        {/* Real logo PNG */}
-        <img
-          src="/logo-full.png"
-          alt="FlickPick"
-          crossOrigin="anonymous"
-          style={{ height: 52, objectFit: 'contain', objectPosition: 'left center' }}
-        />
+        <Wordmark size={20}/>
         <div style={{
-          padding: '5px 13px', borderRadius: 999,
-          background: 'rgba(255,59,107,0.2)',
-          border: '1px solid rgba(255,59,107,0.5)',
-          fontSize: 10, fontWeight: 800, letterSpacing: 2.5,
-          color: '#FF8FA3', textTransform: 'uppercase',
-        }}>WRAPPED '25</div>
+          padding: '6px 12px', borderRadius: 999,
+          background: 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.14)',
+          fontSize: 9, fontWeight: 800, letterSpacing: 2.2,
+          color: 'rgba(255,255,255,0.78)',
+        }}>WRAPPED · 2025</div>
       </div>
 
-      {/* ══════════════════════════════════════════════════
-          SECTION 2 — HERO % (top: 88, height: 200px)
-      ══════════════════════════════════════════════════ */}
+      {/* ══════════ HERO  y=72, h=236 ══════════ */}
       <div style={{
-        position: 'absolute', top: 88, left: 26, right: 26, height: 200,
-        background: 'rgba(255,255,255,0.04)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 24,
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
+        position: 'absolute', top: 72, left: 24, right: 24, height: 236,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        textAlign: 'center',
       }}>
-        {/* Number */}
+        {/* Soft glow behind number */}
         <div style={{
+          position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)',
+          width: 280, height: 180, borderRadius: 999,
+          background: 'radial-gradient(ellipse, rgba(255,59,107,0.35) 0%, transparent 65%)',
+          filter: 'blur(6px)', pointerEvents: 'none',
+        }}/>
+
+        <div style={{
+          position: 'relative',
+          fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)',
+          letterSpacing: 3.5, textTransform: 'uppercase', marginBottom: 4,
+        }}>
+          Vuestra compatibilidad
+        </div>
+
+        <div style={{
+          position: 'relative',
           fontFamily: '"Syne", sans-serif',
-          fontSize: 100, fontWeight: 900, lineHeight: 0.9,
-          letterSpacing: -6, color: '#fff',
+          fontSize: 132, fontWeight: 900, lineHeight: 0.92,
+          letterSpacing: -8,
+          color: '#fff',
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          textShadow: '0 4px 30px rgba(255,59,107,0.45)',
         }}>
-          {compatibilityPct}<span style={{ fontSize: 42, letterSpacing: -2 }}>%</span>
+          <span>{compatibilityPct}</span>
+          <span style={{ fontSize: 52, letterSpacing: -2, marginTop: 14, marginLeft: 2, color: '#FF6B4A' }}>%</span>
         </div>
-        {/* Label */}
-        <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.4)', letterSpacing: 3 }}>
-          COMPATIBILIDAD CINEMATOGRÁFICA
-        </div>
-        {/* Tier pill */}
+
         <div style={{
-          marginTop: 12, padding: '7px 20px', borderRadius: 999,
-          background: 'linear-gradient(90deg, rgba(255,59,107,0.3), rgba(191,90,242,0.3))',
-          border: '1px solid rgba(255,59,107,0.4)',
-          fontSize: 15, fontWeight: 800, color: '#fff', letterSpacing: -0.3,
+          position: 'relative', marginTop: 10,
+          padding: '8px 18px', borderRadius: 999,
+          background: 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.18)',
+          display: 'inline-flex', alignItems: 'center', gap: 7,
+          fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: -0.2,
+          backdropFilter: 'blur(8px)',
         }}>
-          {compatTier.emoji} {compatTier.label}
+          <span style={{ fontSize: 16 }}>{compatTier.emoji}</span>
+          <span>{compatTier.label}</span>
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════
-          SECTION 3 — MEMBERS (top: 308, height: 110px)
-      ══════════════════════════════════════════════════ */}
+      {/* ══════════ COUPLE STRIP  y=324, h=88 ══════════ */}
       <div style={{
-        position: 'absolute', top: 308, left: 26, right: 26, height: 110,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0,
+        position: 'absolute', top: 324, left: 24, right: 24, height: 88,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {memberStats.slice(0, 2).map((ms, i) => (
+        {members.map((ms, i) => (
           <React.Fragment key={ms.member.id}>
-            {/* Member card */}
             <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-              flex: 1,
+              flex: 1, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 6,
             }}>
-              <div style={avatarStyle(ms, i, 60)}>
+              <div style={{
+                width: 56, height: 56, borderRadius: 999, overflow: 'hidden',
+                background: memberColor(i),
+                border: '2.5px solid rgba(255,255,255,0.9)',
+                boxShadow: `0 6px 16px ${i === 0 ? 'rgba(255,59,107,0.5)' : 'rgba(155,59,255,0.5)'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>
                 {ms.member.avatarUrl
-                  ? <img src={ms.member.avatarUrl} alt={ms.member.name} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-                  : <span style={{ fontSize: 22, fontWeight: 900, color: '#fff' }}>{(ms.member.name || '?')[0].toUpperCase()}</span>
+                  ? <img src={ms.member.avatarUrl} alt="" crossOrigin="anonymous"
+                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                  : <span style={{ fontSize: 22, fontWeight: 900, color: '#fff', lineHeight: 1 }}>
+                      {(ms.member.name || '?')[0].toUpperCase()}
+                    </span>
                 }
               </div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', textAlign: 'center' }}>{ms.member.name}</div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: ms.personality.color, textAlign: 'center' }}>{ms.personality.emoji} {ms.personality.label}</div>
+              <div style={{
+                fontSize: 13, fontWeight: 800, color: '#fff',
+                maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                lineHeight: 1,
+              }}>{ms.member.name}</div>
+              <div style={{
+                fontSize: 9.5, fontWeight: 700, color: ms.personality.color,
+                letterSpacing: 0.3, lineHeight: 1,
+              }}>{ms.personality.emoji} {ms.personality.label}</div>
             </div>
 
-            {/* Connector between the two */}
-            {i === 0 && (
-              <div style={{ fontSize: 26, flexShrink: 0, margin: '0 4px', paddingBottom: 22 }}>💘</div>
+            {i === 0 && members.length > 1 && (
+              <div style={{
+                fontSize: 28, lineHeight: 1, flexShrink: 0,
+                marginBottom: 36, marginLeft: -2, marginRight: -2,
+                filter: 'drop-shadow(0 4px 12px rgba(255,59,107,0.55))',
+              }}>💘</div>
             )}
           </React.Fragment>
         ))}
       </div>
 
-      {/* ══════════════════════════════════════════════════
-          SECTION 4 — STATS (top: 432, height: 86px)
-      ══════════════════════════════════════════════════ */}
+      {/* ══════════ STATS TRIPTYCH  y=428, h=124 ══════════ */}
       <div style={{
-        position: 'absolute', top: 432, left: 26, right: 26, height: 86,
+        position: 'absolute', top: 428, left: 24, right: 24, height: 124,
         display: 'flex', gap: 10,
       }}>
         {/* Matches */}
         <div style={{
-          flex: 1, borderRadius: 18,
-          background: 'rgba(255,59,107,0.15)', border: '1px solid rgba(255,59,107,0.35)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          flex: 1, height: '100%', borderRadius: 18,
+          background: 'linear-gradient(155deg, rgba(255,59,107,0.22) 0%, rgba(255,59,107,0.06) 100%)',
+          border: '1px solid rgba(255,59,107,0.3)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', padding: '10px 6px',
         }}>
-          <div style={{ fontFamily: '"Syne", sans-serif', fontSize: 34, fontWeight: 900, color: '#FF3B6B', lineHeight: 1 }}>{totalMatches}</div>
-          <div style={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.45)', letterSpacing: 1.5, marginTop: 3 }}>MATCHES</div>
+          <div style={{
+            fontFamily: '"Syne", sans-serif', fontSize: 42, fontWeight: 900,
+            color: '#fff', lineHeight: 1, letterSpacing: -2,
+          }}>{totalMatches}</div>
+          <div style={{
+            fontSize: 9, fontWeight: 800, color: '#FF8FA3',
+            letterSpacing: 1.8, marginTop: 6, textAlign: 'center',
+          }}>MATCHES</div>
         </div>
 
         {/* Top genre */}
-        {topGenres[0] && (
-          <div style={{
-            flex: 1, borderRadius: 18,
-            background: 'rgba(191,90,242,0.15)', border: '1px solid rgba(191,90,242,0.35)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
-          }}>
-            <div style={{ fontSize: 28, lineHeight: 1 }}>{topGenres[0].emoji}</div>
-            <div style={{ fontSize: 10, fontWeight: 800, color: '#BF5AF2', letterSpacing: 0.5, textAlign: 'center', lineHeight: 1.2 }}>{topGenres[0].name.toUpperCase()}</div>
-          </div>
-        )}
+        <div style={{
+          flex: 1, height: '100%', borderRadius: 18,
+          background: 'linear-gradient(155deg, rgba(155,59,255,0.22) 0%, rgba(155,59,255,0.06) 100%)',
+          border: '1px solid rgba(155,59,255,0.3)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', padding: '10px 6px', gap: 6,
+        }}>
+          {topGenres[0] ? (
+            <>
+              <div style={{ fontSize: 30, lineHeight: 1 }}>{topGenres[0].emoji}</div>
+              <div style={{
+                fontSize: 9.5, fontWeight: 800, color: '#D8B6FF',
+                letterSpacing: 1.2, textAlign: 'center', lineHeight: 1.25,
+                maxWidth: 100, overflow: 'hidden',
+              }}>{topGenres[0].name.toUpperCase()}</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 30, lineHeight: 1 }}>🎬</div>
+              <div style={{
+                fontSize: 9.5, fontWeight: 800, color: '#D8B6FF',
+                letterSpacing: 1.2, textAlign: 'center',
+              }}>GÉNERO</div>
+            </>
+          )}
+        </div>
 
-        {/* Best match poster */}
-        {bestMatch?.poster_path && (
-          <div style={{ flex: 1, borderRadius: 18, overflow: 'hidden', position: 'relative' }}>
-            <img src={posterUrl(bestMatch.poster_path, 'w185')} crossOrigin="anonymous" alt=""
-                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+        {/* Top movie (poster) */}
+        <div style={{
+          flex: 1, height: '100%', borderRadius: 18, overflow: 'hidden',
+          position: 'relative',
+          border: '1px solid rgba(78,255,214,0.25)',
+          background: '#1a0f2e',
+        }}>
+          {bestMatch?.poster_path ? (
+            <>
+              <img src={posterUrl(bestMatch.poster_path, 'w342')} crossOrigin="anonymous" alt=""
+                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+              <div style={{
+                position: 'absolute', inset: 0,
+                background: 'linear-gradient(0deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.15) 50%, transparent 100%)',
+              }}/>
+              <div style={{
+                position: 'absolute', left: 10, right: 10, bottom: 10,
+                fontSize: 9, fontWeight: 800, color: '#4EFFD6',
+                letterSpacing: 1.8,
+              }}>TOP PELI</div>
+            </>
+          ) : (
             <div style={{
-              position: 'absolute', inset: 0,
-              background: 'linear-gradient(0deg, rgba(0,0,0,0.8) 0%, transparent 50%)',
-              display: 'flex', alignItems: 'flex-end', padding: '7px 8px',
+              height: '100%', display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 6,
+              background: 'linear-gradient(155deg, rgba(78,255,214,0.18) 0%, rgba(78,255,214,0.04) 100%)',
             }}>
-              <div style={{ fontSize: 9, fontWeight: 800, color: '#4EFFD6', letterSpacing: 1 }}>TOP PELI</div>
+              <div style={{ fontSize: 30 }}>🍿</div>
+              <div style={{
+                fontSize: 9.5, fontWeight: 800, color: '#4EFFD6',
+                letterSpacing: 1.2,
+              }}>TOP PELI</div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════
-          SECTION 5 — CTA  (bottom: 0, height: 163px)
-          Anchored absolutely — always visible at the bottom
-      ══════════════════════════════════════════════════ */}
+      {/* ══════════ FOOTER CTA  y=552, h=141 ══════════ */}
       <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, height: 163,
-        background: 'linear-gradient(135deg, #FF3B6B 0%, #9B3BFF 100%)',
-        padding: '22px 26px 26px',
+        position: 'absolute', bottom: 0, left: 0, right: 0, height: 141,
+        background: BRAND_GRADIENT,
+        padding: '20px 24px',
         display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+        overflow: 'hidden',
       }}>
-        {/* Headline */}
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', letterSpacing: 2.5, textTransform: 'uppercase', marginBottom: 6 }}>
-            ¿Aún no lo has probado?
-          </div>
-          <div style={{ fontFamily: '"Syne", sans-serif', fontSize: 19, fontWeight: 900, color: '#fff', lineHeight: 1.2, letterSpacing: -0.5 }}>
-            Descubre con quién tienes
-          </div>
-          <div style={{ fontFamily: '"Syne", sans-serif', fontSize: 19, fontWeight: 900, color: '#fff', lineHeight: 1.2, letterSpacing: -0.5 }}>
-            mejor gusto cinematográfico
+        {/* Subtle shine overlay */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: '50%',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.14) 0%, transparent 100%)',
+          pointerEvents: 'none',
+        }}/>
+
+        <div style={{ position: 'relative' }}>
+          <div style={{
+            fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.75)',
+            letterSpacing: 2.5, textTransform: 'uppercase', marginBottom: 6,
+          }}>Descúbrelo tú también</div>
+          <div style={{
+            fontFamily: '"Syne", sans-serif',
+            fontSize: 20, fontWeight: 900, color: '#fff',
+            lineHeight: 1.15, letterSpacing: -0.6,
+          }}>
+            ¿Con quién tienes<br/>mejor gusto cinematográfico?
           </div>
         </div>
-        {/* URL row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontFamily: '"Syne", sans-serif', fontSize: 22, fontWeight: 900, color: '#fff', letterSpacing: -1 }}>
-            flickpick.app
-          </div>
+
+        <div style={{
+          position: 'relative',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
           <div style={{
-            padding: '6px 14px', borderRadius: 999,
-            background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.4)',
-            fontSize: 11, fontWeight: 700, color: '#fff', letterSpacing: 0.5,
-          }}>Gratis · Sin registro</div>
+            fontFamily: '"Syne", sans-serif', fontSize: 22, fontWeight: 900,
+            color: '#fff', letterSpacing: -0.8, lineHeight: 1,
+          }}>flickpick.app</div>
+          <div style={{
+            padding: '7px 14px', borderRadius: 999,
+            background: '#fff',
+            fontSize: 11, fontWeight: 800, color: '#FF3B6B', letterSpacing: 0.2,
+            whiteSpace: 'nowrap',
+          }}>Pruébalo gratis →</div>
         </div>
       </div>
-
     </div>
   );
 });
