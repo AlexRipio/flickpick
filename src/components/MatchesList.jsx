@@ -86,7 +86,7 @@ const MatchesList = () => {
       }}>
         {/* Header */}
         <h1 style={{
-          fontFamily: '"Syne", "Space Grotesk", sans-serif',
+          fontFamily: '"Inter", "Space Grotesk", sans-serif',
           fontSize: 30, fontWeight: 800, color: FP.text, margin: 0, letterSpacing: -0.8,
         }}>Vuestros matches</h1>
 
@@ -145,7 +145,7 @@ const MatchesList = () => {
             }}>📊</div>
             <div>
               <div style={{
-                fontFamily: '"Syne", "Space Grotesk", sans-serif',
+                fontFamily: '"Inter", "Space Grotesk", sans-serif',
                 fontSize: 15, fontWeight: 800, color: '#fff',
               }}>FlickPick Wrapped</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>
@@ -298,7 +298,7 @@ function MatchCard({ match, members, onClick, onDelete }) {
         {/* Info */}
         <div onClick={(e) => { e.stopPropagation(); onClick(); }} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
           <div style={{
-            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontFamily: '"Inter", "Space Grotesk", sans-serif',
             fontSize: 16, fontWeight: 800, color: FP.text, lineHeight: 1.15,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>{title}</div>

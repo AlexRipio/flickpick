@@ -45,6 +45,10 @@ if (bc) bc.onmessage = (e) => { if (e?.data?.roomId) notify(e.data.roomId); };
 window.addEventListener("storage", (e) => {
   if (e.key === STORAGE_KEY) notify(null);
 });
+// Cross-device sync: when bootstrap/refresh hydrates rooms localStorage
+// directly, fire the same notification so MatchesHistory/HomeScreen
+// re-render with the new rooms without waiting for navigation.
+window.addEventListener("flickpick:settings-refreshed", () => notify(null));
 
 function broadcast(roomId) {
   if (bc) bc.postMessage({ roomId });
@@ -112,7 +116,7 @@ function mergeRooms(local, remote) {
   return { ...remote, votes, members, matches, status };
 }
 
-// Remote updates (Supabase Realtime) → deep-merge into local store.
+// Remote updates (FlickPick backend WS / polling) → deep-merge into local store.
 setOnRemoteUpdate((remote) => {
   if (!remote || !remote.id) return;
   const local = getRoom(remote.id);
@@ -123,9 +127,13 @@ setOnRemoteUpdate((remote) => {
 /** Hydrate a room from the cloud if we don't have it locally. */
 export async function hydrateRoomByCode(code) {
   const local = findRoomByCode(code);
-  if (local) return local;
+  if (local) { subscribeToRoom(local.id); return local; }
   const remote = await fetchRoomByCode(code);
-  if (remote) { saveRoom(remote, { skipPush: true }); return remote; }
+  if (remote) {
+    saveRoom(remote, { skipPush: true });
+    subscribeToRoom(remote.id);
+    return remote;
+  }
   return null;
 }
 
@@ -137,7 +145,7 @@ export async function hydrateRoomById(id) {
   return null;
 }
 
-export function createRoom({ name, preferences, host }) {
+export async function createRoom({ name, preferences, host }) {
   const id = uuid();
   const joinCode = randomCode();
   const room = {
@@ -152,27 +160,56 @@ export function createRoom({ name, preferences, host }) {
     matches: [],
     createdAt: Date.now(),
   };
-  const saved = saveRoom(room);
+  // 1. Save locally first (instant UI update for the host).
+  const saved = saveRoom(room, { skipPush: true });
+
+  // 2. Persist to backend BEFORE opening the WS subscription so the
+  //    server's `handleJoinRoom` finds the row in the DB. We swallow
+  //    errors here so the host can still operate offline if the API
+  //    is momentarily unreachable — the next saveRoom() will retry.
+  try {
+    const { apiCreateRoom } = await import('./api');
+    await apiCreateRoom(saved);
+  } catch (e) {
+    console.warn('createRoom: backend persist failed, will retry on next change', e);
+  }
+
+  // 3. Open realtime channel for live updates from joining members.
   subscribeToRoom(id);
   return saved;
 }
 
-export function addMember(roomId, member) {
+export async function addMember(roomId, member) {
   const room = getRoom(roomId);
   if (!room) throw new Error("Sala no encontrada");
   if (room.members.length >= 8) throw new Error("La sala está llena");
+  // Open the realtime channel BEFORE we save: pushRoom queues the
+  // `update` message and flushes it once `open` fires, so the host
+  // (already subscribed on the other device) receives the broadcast.
+  subscribeToRoom(roomId);
   const existing = room.members.find(m => m.id === member.id);
   if (!existing) {
     room.members = [...room.members, { id: member.id, name: member.name, avatarUrl: member.avatarUrl || null, isHost: false, taste: emptyTaste() }];
     room.votes[member.id] = room.votes[member.id] || {};
-    saveRoom(room);
   } else if (member.avatarUrl && existing.avatarUrl !== member.avatarUrl) {
-    // Update avatar if it changed (e.g. user picked a new one)
     existing.avatarUrl = member.avatarUrl;
     if (member.name && member.name !== existing.name) existing.name = member.name;
-    saveRoom(room);
   }
-  return room;
+  // Save locally without push first (instant UI), then await an explicit
+  // upsert so we KNOW the host's backend row reflects the new member.
+  // Without this the guest can land in the lobby with the host invisible
+  // (their initial fire-and-forget pushRoom can silently drop on a flaky
+  // network and never retry).
+  const saved = saveRoom(room, { skipPush: true });
+  try {
+    const { apiUpsertRoom } = await import('./api');
+    await apiUpsertRoom(saved);
+  } catch (err) {
+    // Surface the error so JoinScreen can show a message and let the user
+    // retry instead of silently entering a broken state.
+    throw new Error('No se pudo conectar con la sala. Comprueba tu conexión y vuelve a intentarlo.');
+  }
+  return saved;
 }
 
 export function startRoom(roomId) {
@@ -216,9 +253,53 @@ export function getMemberVotedIds(room, memberId) {
   return new Set(Object.keys(v).map(Number));
 }
 
+/* Películas marcadas como "ya vistas" por cualquier miembro de la sala —
+   se excluyen de los swipes de TODOS los integrantes. */
+export function markWatchedShared(roomId, movie) {
+  const room = getRoom(roomId);
+  if (!room) throw new Error("Sala no encontrada");
+  if (!Array.isArray(room.watchedMovies)) room.watchedMovies = [];
+  if (!room.watchedMovies.some(m => m.id === movie.id)) {
+    room.watchedMovies.push({ id: movie.id, title: movie.title || movie.name, watchedAt: Date.now() });
+  }
+  // También cuenta como un voto skip propio para no volver a verla nosotros
+  if (room.votes) {
+    Object.keys(room.votes).forEach(memberId => {
+      room.votes[memberId] = room.votes[memberId] || {};
+      if (!room.votes[memberId][movie.id]) room.votes[memberId][movie.id] = 'watched';
+    });
+  }
+  saveRoom(room);
+  return room;
+}
+
+export function getRoomWatchedIds(room) {
+  if (!room?.watchedMovies) return new Set();
+  return new Set(room.watchedMovies.map(m => Number(m.id)));
+}
+
 export function removeMatch(roomId, movieId) {
   const room = getRoom(roomId);
   if (!room) return;
   room.matches = room.matches.filter(m => m.movieId !== movieId);
+  return saveRoom(room);
+}
+
+/**
+ * Guest-initiated request to finish the room. Persisted as
+ * `room.endRequest = { memberId, memberName, requestedAt }` so it
+ * propagates to the host through the existing subscribe + realtime
+ * sync. The host then chooses to ignore or actually close.
+ */
+export function requestEndRoom(roomId, memberId, memberName) {
+  const room = getRoom(roomId);
+  if (!room) throw new Error("Sala no encontrada");
+  room.endRequest = { memberId, memberName, requestedAt: Date.now() };
+  return saveRoom(room);
+}
+export function clearEndRequest(roomId) {
+  const room = getRoom(roomId);
+  if (!room) return;
+  room.endRequest = null;
   return saveRoom(room);
 }

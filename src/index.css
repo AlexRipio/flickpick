@@ -1,8 +1,36 @@
+/* ───────────────────────────────────────────────────────────────
+   TIPOGRAFIA HIBRIDA:
+   - Inter (Google Fonts, real) → titulares bold y display
+   - San Francisco (system) → cuerpos, UI, microcopy
+   IMPORTANTE: @import debe estar antes de @tailwind para que
+   PostCSS lo incluya correctamente en el bundle final.
+   ─────────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+  src: local('-apple-system'), local('BlinkMacSystemFont'),
+       local('SF Pro Text'), local('SFProText-Regular'),
+       local('SF Pro Display'), local('SFProDisplay-Regular'),
+       local('Helvetica Neue'), local('Segoe UI Variable'),
+       local('Segoe UI'), local('Roboto');
+}
+
+:root {
+  --fp-font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display',
+                  'Helvetica Neue', 'Segoe UI Variable', 'Segoe UI', Roboto,
+                  system-ui, sans-serif;
+  --fp-font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+                     'Helvetica Neue', system-ui, sans-serif;
+  --fp-font-mono: ui-monospace, 'SF Mono', SFMono-Regular, 'Menlo', 'Consolas', monospace;
+}
 
 @layer base {
   :root {
@@ -32,20 +60,73 @@
 html, body, #root {
   margin: 0; padding: 0;
   min-height: 100%;
-  background: #0A070F;
+  /* Brand gradient at html level so the home-indicator zone never
+     reads as a black band, even if a fixed wrapper falls short. */
+  background:
+    radial-gradient(80% 50% at 15% 0%, oklch(0.35 0.18 290) 0%, transparent 50%),
+    radial-gradient(80% 50% at 100% 100%, oklch(0.30 0.18 340) 0%, transparent 55%),
+    linear-gradient(180deg, #07050E 0%, #12091F 100%);
   color: #F5F2FF;
-  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  font-family: var(--fp-font-sans);
+  font-feature-settings: 'ss01', 'cv01', 'cv11';
+  letter-spacing: -0.01em;
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Prevent iOS auto-zoom & accidental landscape resize */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html { height: 100%; }
+body, #root {
+  /* Dynamic viewport height + safe-area cushion for iOS PWA standalone
+     where 100dvh sometimes reports clipped (excluding home-indicator). */
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: calc(100dvh + env(safe-area-inset-bottom, 0px));
+}
+
+/* Safe-area variables: every fixed root container can read these. */
+:root {
+  --fp-safe-top: env(safe-area-inset-top, 0px);
+  --fp-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --fp-safe-left: env(safe-area-inset-left, 0px);
+  --fp-safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* Apply top/left/right safe-area padding to every full-screen wrapper.
+   We intentionally OMIT padding-bottom here: in iOS PWA standalone mode
+   `env(safe-area-inset-bottom)` is ~34px (home-indicator), and adding
+   it as wrapper padding would push the AmbientBackdrop (absolute inset:0)
+   off the bottom edge — the body background showed through as a black
+   band. Each screen's actionable bottom elements (BottomNav, sticky
+   CTAs, sheets, FABs) handle their own safe-area-bottom via
+   `calc(env(safe-area-inset-bottom,0px) + Xpx)`. (2026-05-06) */
+[style*="position: fixed"][style*="inset: 0"],
+[style*="position:fixed"][style*="inset:0"] {
+  padding-top: var(--fp-safe-top);
+  padding-left: var(--fp-safe-left);
+  padding-right: var(--fp-safe-right);
 }
 
 body {
+  /* Base color matches the AmbientBackdrop's bottom stop (#12091F) so any
+     pixel-level mismatch in iOS PWA standalone blends instead of reading
+     as a black band. Gradients on top stay identical. */
   background:
     radial-gradient(60% 40% at 20% 10%, rgba(155,59,255,0.12), transparent 60%),
     radial-gradient(50% 40% at 80% 90%, rgba(255,107,74,0.10), transparent 60%),
-    #0A070F;
-  min-height: 100vh;
+    #12091F;
+}
+
+/* ── Mobile-first responsive guards ─────────────────────────────── */
+img { max-width: 100%; height: auto; }
+
+/* Prevent the join keypad and other fixed-pixel grids from overflowing
+   on narrow phones (≤ 380px). */
+@media (max-width: 380px) {
+  body { font-size: 14px; }
 }
 
 input[type=range] {
@@ -84,10 +165,12 @@ input[type=range]::-webkit-slider-thumb {
   100% { opacity: 1; transform: scale(1) rotate(0); }
 }
 
-/* Animated gradient shift for flame text */
-@keyframes fp-shimmer {
-  0%   { background-position: 0% 50%; }
-  100% { background-position: 200% 50%; }
+/* Flame gradient sweep — el degradado fluye de izq a der atravesando
+   las letras. Loopea seamless porque el gradiente es periódico (acaba
+   con el mismo gold con el que empieza) y se tilea con repeat. */
+@keyframes fp-flame-flow {
+  from { background-position: 0% 50%; }
+  to   { background-position: 200% 50%; }
 }
 
 /* Candle-like gentle flicker on flame logo */
@@ -101,6 +184,50 @@ input[type=range]::-webkit-slider-thumb {
 
 /* Generic spin (used for loading indicators) */
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ── BottomNav · notch carved out of the bar's top center ─────────
+   Single-layer mask: transparent inside the circle, opaque outside.
+   Avoids mask-composite (autoprefixer turns it into xor, inverting behavior). */
+.fp-nav-cutout {
+  -webkit-mask-image: radial-gradient(circle 40px at 50% 0, transparent 39px, #000 41px);
+          mask-image: radial-gradient(circle 40px at 50% 0, transparent 39px, #000 41px);
+  -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+          mask-size: 100% 100%;
+}
+@keyframes fp-fab-pulse {
+  0%,100% { transform: scale(1);    opacity: 0.55; }
+  50%     { transform: scale(1.08); opacity: 0.85; }
+}
+@keyframes fp-nav-glow-in {
+  0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
+  100% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+}
+@keyframes fp-nav-dot-in {
+  0%   { opacity: 0; transform: translateX(-50%) scale(0); }
+  100% { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+.fp-fab-pulse  { animation: fp-fab-pulse 3.5s ease-in-out infinite; }
+.fp-glow-in    { animation: fp-nav-glow-in 280ms cubic-bezier(.2,.8,.2,1) both; }
+.fp-dot-in     { animation: fp-nav-dot-in 220ms cubic-bezier(.2,.8,.2,1) both; }
+
+/* FAB press: spring micro-bounce con leve rotación */
+@keyframes fp-fab-press {
+  0%   { transform: translateX(-50%) scale(1)    rotate(0deg); }
+  28%  { transform: translateX(-50%) scale(0.92) rotate(-5deg); }
+  62%  { transform: translateX(-50%) scale(1.06) rotate(3deg); }
+  100% { transform: translateX(-50%) scale(1)    rotate(0deg); }
+}
+.fp-fab-press { animation: fp-fab-press 380ms cubic-bezier(.34,1.56,.64,1) both; }
+
+/* Burst del halo al pulsar */
+@keyframes fp-fab-burst {
+  0%   { opacity: 0;    transform: scale(0.85); }
+  40%  { opacity: 0.85; transform: scale(1.45); }
+  100% { opacity: 0;    transform: scale(1.7);  }
+}
+.fp-fab-burst { animation: fp-fab-burst 480ms cubic-bezier(.2,.8,.2,1) both; }
 
 /* Slow rotate for ambient decorations */
 @keyframes fp-spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -167,6 +294,84 @@ input[type=range]::-webkit-slider-thumb {
 .fp-exit-right { animation: fp-exit-right 0.44s cubic-bezier(0.4,0,1,1) forwards; }
 .fp-exit-left  { animation: fp-exit-left  0.44s cubic-bezier(0.4,0,1,1) forwards; }
 .fp-card-rise  { animation: fp-card-rise  0.38s cubic-bezier(0.2,0.8,0.3,1) forwards; }
+
+/* ── Aurora generator (AI avatar generation) ─────────────────── */
+/* Animated multi-blob radial gradient that drifts + hue-rotates,
+   used as the visual feedback while the AI generates an avatar. */
+@keyframes fp-aurora-drift {
+  0%   { transform: translate(0, 0) scale(1)    rotate(0deg);   filter: blur(12px) hue-rotate(0deg)   saturate(1.4); }
+  20%  { transform: translate(6%, -8%) scale(1.18) rotate(70deg);  filter: blur(16px) hue-rotate(35deg)  saturate(1.6); }
+  45%  { transform: translate(-7%, 6%) scale(1.05) rotate(160deg); filter: blur(20px) hue-rotate(70deg)  saturate(1.5); }
+  70%  { transform: translate(8%, 9%) scale(1.22)  rotate(250deg); filter: blur(14px) hue-rotate(40deg)  saturate(1.7); }
+  100% { transform: translate(0, 0) scale(1)    rotate(360deg); filter: blur(12px) hue-rotate(0deg)   saturate(1.4); }
+}
+@keyframes fp-aurora-ring {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes fp-aurora-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(155,59,255,0.55), 0 20px 60px rgba(255,59,107,0.45); }
+  50%      { box-shadow: 0 0 0 14px rgba(155,59,255,0), 0 30px 80px rgba(78,255,214,0.4); }
+}
+@keyframes fp-aurora-text-fade {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}
+
+.fp-aurora-wrap {
+  position: relative;
+  width: 140px; height: 140px;
+  border-radius: 999px;
+  overflow: hidden;
+  isolation: isolate;
+  animation: fp-aurora-pulse 2.4s ease-in-out infinite;
+}
+.fp-aurora-blob {
+  position: absolute; inset: -25%;
+  background:
+    radial-gradient(circle at 28% 30%, #FF3B6B 0%, transparent 38%),
+    radial-gradient(circle at 72% 60%, #9B3BFF 0%, transparent 42%),
+    radial-gradient(circle at 50% 82%, #4EFFD6 0%, transparent 38%),
+    radial-gradient(circle at 80% 22%, #FF6B4A 0%, transparent 36%),
+    radial-gradient(circle at 18% 68%, #FFD86B 0%, transparent 30%);
+  animation: fp-aurora-drift 5.5s ease-in-out infinite;
+  z-index: 1;
+}
+.fp-aurora-grain {
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.18 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  mix-blend-mode: overlay;
+  opacity: 0.55;
+  z-index: 2;
+  pointer-events: none;
+}
+.fp-aurora-ring {
+  position: absolute; inset: -3px;
+  border-radius: 999px;
+  background: conic-gradient(from 0deg, #FF3B6B, #9B3BFF, #4EFFD6, #FF6B4A, #FFD86B, #FF3B6B);
+  animation: fp-aurora-ring 3.2s linear infinite;
+  -webkit-mask: radial-gradient(circle, transparent 64%, #000 67%);
+          mask: radial-gradient(circle, transparent 64%, #000 67%);
+  z-index: 3;
+}
+.fp-aurora-label {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 4;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+  animation: fp-aurora-text-fade 1.6s ease-in-out infinite;
+}
+
+/* AI generation result reveal — masks the result image inwards from a circle */
+@keyframes fp-aurora-reveal {
+  0%   { -webkit-mask-image: radial-gradient(circle, transparent 0%, #000 0%); mask-image: radial-gradient(circle, transparent 0%, #000 0%); }
+  100% { -webkit-mask-image: radial-gradient(circle, #000 100%, #000 100%); mask-image: radial-gradient(circle, #000 100%, #000 100%); }
+}
+.fp-aurora-reveal { animation: fp-aurora-reveal 0.6s ease-out forwards; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

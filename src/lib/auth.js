@@ -1,129 +1,136 @@
-// Unified auth layer for FlickPick.
-// - If Supabase env vars are set → uses Supabase Auth (real DB, works across devices).
-// - Otherwise → falls back to a local, password-hashed account registry in localStorage so
-//   signup/signin still *validate* (wrong password fails) and Google sign-in at least
-//   returns a stable demo profile. This keeps the app usable out-of-the-box.
+/**
+ * Unified auth layer for FlickPick.
+ * Email/Password + Google OAuth via FlickPick backend API.
+ */
 
-import { supabase, hasSupabase } from './supabase';
+import {
+  getToken, setToken,
+  apiRegister, apiLogin, apiVerifyEmail,
+  apiGetMe, apiLogout, apiGoogleAuth,
+} from './api';
 
-const LOCAL_USERS_KEY = 'flickpick.users.v1';
+export const hasSupabase = false;
 
-function readLocalUsers() {
-  try { return JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || '{}'); } catch { return {}; }
-}
-function writeLocalUsers(map) {
-  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify(map));
-}
+// ── Auth state listeners ─────────────────────────────────────────────
+const authListeners = new Set();
+let _currentProfile = undefined;
 
-async function hash(input) {
-  // SHA-256 via SubtleCrypto — real validation, not plain-text comparison.
-  const buf = new TextEncoder().encode(String(input));
-  const out = await crypto.subtle.digest('SHA-256', buf);
-  return [...new Uint8Array(out)].map(b => b.toString(16).padStart(2, '0')).join('');
+function notifyListeners(profile) {
+  _currentProfile = profile;
+  authListeners.forEach(fn => { try { fn(profile); } catch {} });
 }
 
-function profileFromSupabaseUser(u) {
-  if (!u) return null;
-  const meta = u.user_metadata || {};
+function profileFromApiUser(user) {
+  if (!user) return null;
   return {
-    id: u.id,
-    name: meta.name || meta.full_name || (u.email || '').split('@')[0] || 'Cinéfilo',
-    email: u.email || meta.email || '',
-    avatarUrl: meta.avatar_url || null,
-    provider: u.app_metadata?.provider || 'email',
+    id: user.id,
+    name: user.name || user.email?.split('@')[0] || 'Cinefilo',
+    email: user.email || '',
+    avatarUrl: user.avatar_url || null,
+    provider: user.provider || 'email',
   };
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Public API
-// ──────────────────────────────────────────────────────────────────────
-
-export async function signUpWithEmail({ name, email, password }) {
-  if (!email || !password || password.length < 6) throw new Error('Email y contraseña (mín. 6 caracteres) son obligatorios.');
-  const cleanName = (name || '').trim() || (email.split('@')[0] || 'Cinéfilo');
-
-  if (hasSupabase) {
-    const { data, error } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { name: cleanName } },
-    });
-    if (error) throw new Error(error.message);
-    return { profile: profileFromSupabaseUser(data.user), needsConfirm: !data.session };
+// ── Initialize on page load ──────────────────────────────────────────
+let _initialized = false;
+async function initAuth() {
+  if (_initialized) return;
+  _initialized = true;
+  const token = getToken();
+  if (!token) { notifyListeners(null); return; }
+  try {
+    const user = await apiGetMe();
+    notifyListeners(profileFromApiUser(user));
+  } catch {
+    setToken(null);
+    notifyListeners(null);
   }
+}
+initAuth();
 
-  // Local fallback: reject duplicate email, hash password.
-  const users = readLocalUsers();
-  if (users[email]) throw new Error('Ya existe una cuenta con ese email. Inicia sesión.');
-  const passHash = await hash(password);
-  const id = 'u-' + crypto.randomUUID().slice(0, 8);
-  users[email] = { id, name: cleanName, email, passHash, createdAt: Date.now() };
-  writeLocalUsers(users);
-  return { profile: { id, name: cleanName, email, provider: 'email' }, needsConfirm: false };
+// ── Email/Password ───────────────────────────────────────────────────
+
+export async function registerWithEmail(email, password, name) {
+  if (!email || !email.includes('@')) throw new Error('Email invalido.');
+  if (!password || password.length < 6) throw new Error('La contrasena debe tener al menos 6 caracteres.');
+  return apiRegister(email, password, name);
 }
 
-export async function signInWithEmail({ email, password }) {
-  if (!email || !password) throw new Error('Introduce email y contraseña.');
-
-  if (hasSupabase) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(error.message);
-    return { profile: profileFromSupabaseUser(data.user) };
+export async function loginWithEmail(email, password) {
+  if (!email || !email.includes('@')) throw new Error('Email invalido.');
+  if (!password) throw new Error('Contrasena obligatoria.');
+  const data = await apiLogin(email, password);
+  if (data?.user) {
+    const profile = profileFromApiUser(data.user);
+    notifyListeners(profile);
+    return { profile };
   }
-
-  const users = readLocalUsers();
-  const account = users[email];
-  if (!account) throw new Error('No existe cuenta con ese email. Regístrate.');
-  const passHash = await hash(password);
-  if (passHash !== account.passHash) throw new Error('Contraseña incorrecta.');
-  return { profile: { id: account.id, name: account.name, email: account.email, provider: 'email' } };
+  return data;
 }
 
-export async function signInWithGoogle() {
-  if (hasSupabase) {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
-    if (error) throw new Error(error.message);
-    // Redirect happens — nothing else to do here.
-    return { profile: null, redirecting: true };
+export async function verifyEmail(email, token) {
+  if (!email || !token) throw new Error('Faltan datos de verificacion.');
+  const data = await apiVerifyEmail(email, token);
+  if (data?.user) {
+    const profile = profileFromApiUser(data.user);
+    notifyListeners(profile);
+    return { profile };
   }
-  // Local fallback: create/reuse a stable demo Google account.
-  const users = readLocalUsers();
-  const email = 'google-demo@flickpick.app';
-  if (!users[email]) {
-    users[email] = {
-      id: 'u-google-' + crypto.randomUUID().slice(0, 6),
-      name: 'Cinéfilo Google',
-      email,
-      passHash: null,
-      provider: 'google',
-      createdAt: Date.now(),
-    };
-    writeLocalUsers(users);
-  }
-  const a = users[email];
-  return { profile: { id: a.id, name: a.name, email: a.email, provider: 'google' } };
+  return data;
 }
+
+// ── Google OAuth ─────────────────────────────────────────────────────
+
+export async function processGoogleUserInfo(userInfo) {
+  if (!userInfo?.sub || !userInfo?.email) {
+    throw new Error('Datos de Google incompletos.');
+  }
+  const data = await apiGoogleAuth(userInfo.sub, userInfo.email, userInfo.name, userInfo.picture);
+  if (!data?.token || !data?.user) throw new Error('No se pudo autenticar con Google.');
+
+  setToken(data.token);
+  const profile = profileFromApiUser(data.user);
+  notifyListeners(profile);
+  return { profile };
+}
+
+export async function processGoogleCredential(credential) {
+  try {
+    const decoded = JSON.parse(atob(credential.split('.')[1]));
+    const data = await apiGoogleAuth(decoded.sub, decoded.email, decoded.name, decoded.picture);
+    if (!data?.token || !data?.user) throw new Error('No se pudo autenticar con Google.');
+    setToken(data.token);
+    const profile = profileFromApiUser(data.user);
+    notifyListeners(profile);
+    return { profile };
+  } catch {
+    throw new Error('No se pudo procesar la respuesta de Google.');
+  }
+}
+
+// ── Session ──────────────────────────────────────────────────────────
 
 export async function signOut() {
-  if (hasSupabase) await supabase.auth.signOut();
+  await apiLogout();
+  notifyListeners(null);
 }
 
 export async function getCurrentProfile() {
-  if (hasSupabase) {
-    const { data } = await supabase.auth.getUser();
-    return profileFromSupabaseUser(data?.user || null);
-  }
-  return null;
+  if (_currentProfile) return _currentProfile;
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const user = await apiGetMe();
+    return profileFromApiUser(user);
+  } catch { return null; }
 }
 
 export function onAuthChange(callback) {
-  if (!hasSupabase) return () => {};
-  const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-    callback(profileFromSupabaseUser(session?.user || null));
-  });
-  return () => subscription.unsubscribe();
+  authListeners.add(callback);
+  if (_currentProfile !== undefined) {
+    try { callback(_currentProfile); } catch {}
+  }
+  return () => authListeners.delete(callback);
 }
 
-export { hasSupabase };
+export { getToken, setToken };

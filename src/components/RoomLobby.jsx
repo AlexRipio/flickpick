@@ -13,6 +13,8 @@ const RoomLobby = () => {
   const [room, setRoom] = useState(() => getRoom(roomId));
   const [copied, setCopied] = useState(false);
   const [soloWarning, setSoloWarning] = useState(false);
+  const [closeConfirm, setCloseConfirm] = useState(false);
+  const [closing, setClosing] = useState(false);
 
   useEffect(() => {
     const handleRoom = (r) => {
@@ -40,8 +42,51 @@ const RoomLobby = () => {
   const isHost = profile?.id === room.ownerId;
   const joinLink = `${window.location.origin}/g/${room.joinCode}`;
 
-  const copy = () => {
-    navigator.clipboard?.writeText(joinLink).catch(() => {});
+  // WhatsApp / Telegram / Mail respect *bold* and _italic_ pseudo-markdown.
+  // Multi-line formatting reads like a proper invite, not a one-liner.
+  const shareText = room.name
+    ? `🎬 *Tienes invitación a una sala de FlickPick*
+
+Vamos a elegir qué peli ver esta noche — sin discusiones, sin scroll infinito.
+Cada uno desliza, cuando coincidimos: ¡*match*! 🍿
+
+🎟️ *Sala:* ${room.name}
+🔑 *Código:* ${room.joinCode}
+
+_Swipe · Match · Watch_`
+    : `🎬 *Tienes invitación a una sala de FlickPick*
+
+Vamos a elegir qué peli ver esta noche — sin discusiones, sin scroll infinito.
+Cada uno desliza, cuando coincidimos: ¡*match*! 🍿
+
+🔑 *Código:* ${room.joinCode}
+
+_Swipe · Match · Watch_`;
+
+  const copy = async () => {
+    try { await navigator.clipboard?.writeText(joinLink); } catch {}
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
+  const shareNative = async () => {
+    const shareData = {
+      title: room.name ? `FlickPick · ${room.name}` : 'FlickPick',
+      text:  shareText,
+      url:   joinLink,
+    };
+    try {
+      if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+        await navigator.share(shareData);
+        return;
+      }
+    } catch {
+      // User dismissed share sheet — silently no-op.
+      return;
+    }
+    // Fallback when Web Share isn't available (Firefox, desktop, etc.):
+    // copy to clipboard so at least they have the link.
+    try { await navigator.clipboard?.writeText(`${shareText}\n${joinLink}`); } catch {}
     setCopied(true);
     setTimeout(() => setCopied(false), 1600);
   };
@@ -55,11 +100,26 @@ const RoomLobby = () => {
     navigate(`/room/${roomId}`, { replace: true });
   };
 
-  const handleClose = () => {
-    if (window.confirm('¿Cerrar la sala para todos los participantes?')) {
+  // window.confirm() is unreliable on iOS PWAs (sometimes silently
+  // swallowed) — use an in-app confirmation modal so the close action
+  // is always visible and dismissible.
+  const handleClose = () => setCloseConfirm(true);
+
+  const performClose = async () => {
+    if (closing) return;
+    setClosing(true);
+    try {
+      // Local update fires the lobby's onRemoteUpdate listener, which
+      // sees status === 'ended' and redirects the host. We also push to
+      // the backend so polled guests get the same redirect.
       closeRoom(roomId);
-      navigate('/home', { replace: true });
+    } catch (e) {
+      // Even if the local store throws (room missing), force-navigate
+      // so the host isn't stranded on a stale lobby.
+      console.warn('closeRoom failed:', e);
     }
+    // Hard fallback: regardless of state listeners, leave the lobby.
+    navigate('/home', { replace: true });
   };
 
   return (
@@ -84,7 +144,9 @@ const RoomLobby = () => {
 
       <div style={{
         position: 'relative', zIndex: 2, flex: 1,
-        padding: '10px 24px 28px', display: 'flex', flexDirection: 'column', gap: 20,
+        padding: '10px 24px calc(env(safe-area-inset-bottom, 0px) + 110px)',
+        display: 'flex', flexDirection: 'column', gap: 20,
+        overflowY: 'auto',
         maxWidth: 520, width: '100%', margin: '0 auto', overflowY: 'auto',
       }}>
         <div style={{
@@ -113,26 +175,40 @@ const RoomLobby = () => {
             </div>
           </div>
 
-          <button onClick={copy} style={{
-            marginTop: 16,
-            padding: '10px 18px', borderRadius: 999,
-            background: 'rgba(255,255,255,0.08)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-          }}>
-            {copied ? (
-              <>
-                <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 7l3 3 7-7" stroke="#4EFFD6" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                <span style={{ color: '#4EFFD6' }}>Copiado</span>
-              </>
-            ) : (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="11" height="11" rx="2" stroke="#fff" strokeWidth="2"/><path d="M5 15V5a2 2 0 012-2h10" stroke="#fff" strokeWidth="2" strokeLinecap="round"/></svg>
-                Copiar enlace
-              </>
-            )}
-          </button>
+          <div style={{ marginTop: 16, display: 'inline-flex', gap: 8 }}>
+            <button onClick={copy} style={{
+              padding: '10px 16px', borderRadius: 999,
+              background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}>
+              {copied ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 7l3 3 7-7" stroke="#4EFFD6" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <span style={{ color: '#4EFFD6' }}>Copiado</span>
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="9" y="9" width="11" height="11" rx="2" stroke="#fff" strokeWidth="2"/><path d="M5 15V5a2 2 0 012-2h10" stroke="#fff" strokeWidth="2" strokeLinecap="round"/></svg>
+                  Copiar enlace
+                </>
+              )}
+            </button>
+            <button onClick={shareNative} aria-label="Compartir" style={{
+              width: 42, height: 42, borderRadius: 999,
+              background: 'linear-gradient(135deg, rgba(255,107,74,0.18), rgba(255,59,107,0.18))',
+              border: '1px solid rgba(255,107,74,0.45)',
+              color: '#fff', cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3v12M12 3l-4 4M12 3l4 4" stroke="#FF7A99" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M5 11v8a2 2 0 002 2h10a2 2 0 002-2v-8" stroke="#FF7A99" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
           <div style={{ marginTop: 12, fontSize: 11, color: FP.textMuted, wordBreak: 'break-all' }}>
             {joinLink}
           </div>
@@ -185,23 +261,92 @@ const RoomLobby = () => {
           </div>
         </div>
 
-        <div style={{ flex: 1 }}/>
-
-        {isHost ? (
-          <GradientButton variant="flame" onClick={start}>
-            Empezar a deslizar
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M9 6l6 6-6 6"/></svg>
-          </GradientButton>
-        ) : (
-          <div style={{
-            padding: 16, textAlign: 'center', borderRadius: 18,
-            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-            color: FP.textDim, fontSize: 14,
-          }}>
-            Esperando a que el anfitrión empiece…
-          </div>
-        )}
       </div>
+
+      {/* Sticky bottom CTA — mismo patrón que CreateRoomScreen para
+          que el flujo Crear → Lobby → Swipe se sienta continuo. */}
+      <div style={{
+        position: 'fixed', left: 0, right: 0,
+        bottom: 0, zIndex: 10,
+        padding: `12px 20px calc(env(safe-area-inset-bottom, 0px) + 14px)`,
+        background: 'linear-gradient(180deg, rgba(11,4,32,0.55) 0%, rgba(11,4,32,0.92) 60%, rgba(11,4,32,0.97) 100%)',
+        backdropFilter: 'blur(18px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(18px) saturate(180%)',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        boxShadow: '0 -10px 30px rgba(0,0,0,0.35)',
+      }}>
+        <div style={{ maxWidth: 520, margin: '0 auto' }}>
+          {isHost ? (
+            <GradientButton
+              variant="flame"
+              onClick={start}
+              style={{
+                height: 64, fontSize: 17, fontWeight: 800,
+                letterSpacing: 0.3,
+                boxShadow: '0 14px 32px rgba(255,59,107,0.45)',
+              }}
+            >
+              Empezar a deslizar
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M9 6l6 6-6 6"/></svg>
+            </GradientButton>
+          ) : (
+            <div style={{
+              padding: 18, textAlign: 'center', borderRadius: 999,
+              background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+              color: FP.textDim, fontSize: 14, fontWeight: 600,
+            }}>
+              Esperando a que el anfitrión empiece…
+            </div>
+          )}
+        </div>
+      </div>
+
+      {closeConfirm && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 110,
+          background: 'rgba(7,5,14,0.92)', backdropFilter: 'blur(12px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 28,
+        }}>
+          <div style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 28, padding: 32,
+            maxWidth: 380, width: '100%', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 36, marginBottom: 14 }}>🔒</div>
+            <div style={{
+              fontFamily: '"Inter", "Space Grotesk", sans-serif',
+              fontSize: 22, fontWeight: 800, color: FP.text,
+              marginBottom: 12, letterSpacing: -0.5,
+            }}>¿Cerrar la sala?</div>
+            <div style={{
+              fontSize: 14, color: FP.textDim, lineHeight: 1.6, marginBottom: 28,
+            }}>
+              Todos los participantes saldrán automáticamente. Esta acción no se puede deshacer.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button onClick={() => setCloseConfirm(false)} disabled={closing} style={{
+                width: '100%', height: 52, borderRadius: 999,
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid rgba(255,255,255,0.18)',
+                color: '#fff', fontWeight: 700, fontSize: 15,
+                cursor: closing ? 'default' : 'pointer',
+                fontFamily: '"Space Grotesk"', opacity: closing ? 0.5 : 1,
+              }}>Cancelar</button>
+              <button onClick={performClose} disabled={closing} style={{
+                width: '100%', height: 52, borderRadius: 999,
+                background: 'linear-gradient(135deg, #FF3B6B, #FF6B4A)', border: 'none',
+                color: '#fff', fontWeight: 700, fontSize: 15,
+                cursor: closing ? 'default' : 'pointer',
+                fontFamily: '"Space Grotesk"',
+                boxShadow: '0 8px 22px rgba(255,59,107,0.35)',
+                opacity: closing ? 0.7 : 1,
+              }}>{closing ? 'Cerrando…' : 'Sí, cerrar sala'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {soloWarning && (
         <div style={{
@@ -218,7 +363,7 @@ const RoomLobby = () => {
           }}>
             <div style={{ fontSize: 36, marginBottom: 14 }}>🎬</div>
             <div style={{
-              fontFamily: '"Syne", "Space Grotesk", sans-serif',
+              fontFamily: '"Inter", "Space Grotesk", sans-serif',
               fontSize: 22, fontWeight: 800, color: FP.text,
               marginBottom: 12, letterSpacing: -0.5,
             }}>«Houston, we have a problem»</div>

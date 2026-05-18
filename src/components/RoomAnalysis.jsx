@@ -6,6 +6,8 @@ import { FP, memberColor } from '@/lib/fp';
 import { getRoom, subscribe, hydrateRoomById } from '@/lib/roomStore';
 import { posterUrl } from '@/lib/tmdb';
 import { computeRoomAnalysis } from '@/lib/roomAnalysis';
+import { openShowtimes } from '@/lib/showtimes';
+import WrappedShareCard from '@/components/WrappedShareCard';
 
 // ── Animated counter ──────────────────────────────────────────────────────────
 function AnimatedNumber({ target, duration = 1200, suffix = '' }) {
@@ -50,310 +52,7 @@ function GenreBar({ genre, maxCount, delay = 0 }) {
   );
 }
 
-// ── Share card (captured as image) ───────────────────────────────────────────
-//  Canvas: 390 × 693 (9:16 Stories)  ·  Outer gutter: 24px
-//  Layout (y-positions):
-//    24→56    Header (32)
-//    72→308   Hero (236)
-//    324→412  Couple strip (88)
-//    428→552  Stats triptych (124)
-//    552→693  Footer CTA (141)
-const ShareCard = React.forwardRef(function ShareCard({ analysis }, ref) {
-  if (!analysis) return null;
-  const { compatibilityPct, compatTier, totalMatches, memberStats, topGenres, bestMatch } = analysis;
-
-  // Brand gradient — used throughout for cohesion
-  const BRAND_GRADIENT = 'linear-gradient(135deg, #FF6B4A 0%, #FF3B6B 50%, #9B3BFF 100%)';
-  const members = memberStats.slice(0, 2);
-
-  // Wordmark — transparent, gradient on "Pick"
-  const Wordmark = ({ size = 22 }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: size * 0.36 }}>
-      <div style={{
-        width: size * 1.36, height: size * 1.36, borderRadius: size * 0.36,
-        background: BRAND_GRADIENT,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 6px 18px rgba(255,59,107,0.5)',
-      }}>
-        <span style={{ fontFamily: '"Syne", sans-serif', fontSize: size * 0.86, fontWeight: 900, color: '#fff', lineHeight: 1 }}>F</span>
-      </div>
-      <span style={{
-        fontFamily: '"Syne", sans-serif', fontSize: size, fontWeight: 900,
-        color: '#fff', letterSpacing: -0.6, lineHeight: 1,
-      }}>
-        Flick<span style={{ color: '#FF6B4A' }}>Pick</span>
-      </span>
-    </div>
-  );
-
-  return (
-    <div ref={ref} style={{
-      width: 390, height: 693,
-      position: 'fixed', top: 0, left: '-420px',
-      zIndex: -1, pointerEvents: 'none',
-      overflow: 'hidden',
-      fontFamily: '"Space Grotesk", system-ui',
-      background: '#0A0616',
-      color: '#fff',
-    }}>
-      {/* Deep background layers (dark → purple veil → accent glows) */}
-      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, #140628 0%, #0B0520 45%, #07040F 100%)' }}/>
-      <div style={{ position: 'absolute', top: -140, left: -120, width: 380, height: 380, borderRadius: 999,
-                    background: 'radial-gradient(circle, rgba(155,59,255,0.55) 0%, transparent 65%)', filter: 'blur(10px)' }}/>
-      <div style={{ position: 'absolute', top: 180, right: -140, width: 360, height: 360, borderRadius: 999,
-                    background: 'radial-gradient(circle, rgba(255,59,107,0.45) 0%, transparent 65%)', filter: 'blur(10px)' }}/>
-      <div style={{ position: 'absolute', top: 380, left: -80, width: 260, height: 260, borderRadius: 999,
-                    background: 'radial-gradient(circle, rgba(78,255,214,0.18) 0%, transparent 70%)', filter: 'blur(8px)' }}/>
-
-      {/* ══════════ HEADER  y=24, h=32 ══════════ */}
-      <div style={{
-        position: 'absolute', top: 24, left: 24, right: 24, height: 32,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        <Wordmark size={20}/>
-        <div style={{
-          padding: '6px 12px', borderRadius: 999,
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.14)',
-          fontSize: 9, fontWeight: 800, letterSpacing: 2.2,
-          color: 'rgba(255,255,255,0.78)',
-        }}>WRAPPED · 2025</div>
-      </div>
-
-      {/* ══════════ HERO  y=72, h=236 ══════════ */}
-      <div style={{
-        position: 'absolute', top: 72, left: 24, right: 24, height: 236,
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        textAlign: 'center',
-      }}>
-        {/* Soft glow behind number */}
-        <div style={{
-          position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)',
-          width: 280, height: 180, borderRadius: 999,
-          background: 'radial-gradient(ellipse, rgba(255,59,107,0.35) 0%, transparent 65%)',
-          filter: 'blur(6px)', pointerEvents: 'none',
-        }}/>
-
-        <div style={{
-          position: 'relative',
-          fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.5)',
-          letterSpacing: 3.5, textTransform: 'uppercase', marginBottom: 4,
-        }}>
-          Vuestra compatibilidad
-        </div>
-
-        <div style={{
-          position: 'relative',
-          fontFamily: '"Syne", sans-serif',
-          fontSize: 132, fontWeight: 900, lineHeight: 0.92,
-          letterSpacing: -8,
-          color: '#fff',
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-          textShadow: '0 4px 30px rgba(255,59,107,0.45)',
-        }}>
-          <span>{compatibilityPct}</span>
-          <span style={{ fontSize: 52, letterSpacing: -2, marginTop: 14, marginLeft: 2, color: '#FF6B4A' }}>%</span>
-        </div>
-
-        <div style={{
-          position: 'relative', marginTop: 10,
-          padding: '8px 18px', borderRadius: 999,
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.18)',
-          display: 'inline-flex', alignItems: 'center', gap: 7,
-          fontSize: 14, fontWeight: 800, color: '#fff', letterSpacing: -0.2,
-          backdropFilter: 'blur(8px)',
-        }}>
-          <span style={{ fontSize: 16 }}>{compatTier.emoji}</span>
-          <span>{compatTier.label}</span>
-        </div>
-      </div>
-
-      {/* ══════════ COUPLE STRIP  y=324, h=88 ══════════ */}
-      <div style={{
-        position: 'absolute', top: 324, left: 24, right: 24, height: 88,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        {members.map((ms, i) => (
-          <React.Fragment key={ms.member.id}>
-            <div style={{
-              flex: 1, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center', gap: 6,
-            }}>
-              <div style={{
-                width: 56, height: 56, borderRadius: 999, overflow: 'hidden',
-                background: memberColor(i),
-                border: '2.5px solid rgba(255,255,255,0.9)',
-                boxShadow: `0 6px 16px ${i === 0 ? 'rgba(255,59,107,0.5)' : 'rgba(155,59,255,0.5)'}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-                {ms.member.avatarUrl
-                  ? <img src={ms.member.avatarUrl} alt="" crossOrigin="anonymous"
-                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-                  : <span style={{ fontSize: 22, fontWeight: 900, color: '#fff', lineHeight: 1 }}>
-                      {(ms.member.name || '?')[0].toUpperCase()}
-                    </span>
-                }
-              </div>
-              <div style={{
-                fontSize: 13, fontWeight: 800, color: '#fff',
-                maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                lineHeight: 1,
-              }}>{ms.member.name}</div>
-              <div style={{
-                fontSize: 9.5, fontWeight: 700, color: ms.personality.color,
-                letterSpacing: 0.3, lineHeight: 1,
-              }}>{ms.personality.emoji} {ms.personality.label}</div>
-            </div>
-
-            {i === 0 && members.length > 1 && (
-              <div style={{
-                fontSize: 28, lineHeight: 1, flexShrink: 0,
-                marginBottom: 36, marginLeft: -2, marginRight: -2,
-                filter: 'drop-shadow(0 4px 12px rgba(255,59,107,0.55))',
-              }}>💘</div>
-            )}
-          </React.Fragment>
-        ))}
-      </div>
-
-      {/* ══════════ STATS TRIPTYCH  y=428, h=124 ══════════ */}
-      <div style={{
-        position: 'absolute', top: 428, left: 24, right: 24, height: 124,
-        display: 'flex', gap: 10,
-      }}>
-        {/* Matches */}
-        <div style={{
-          flex: 1, height: '100%', borderRadius: 18,
-          background: 'linear-gradient(155deg, rgba(255,59,107,0.22) 0%, rgba(255,59,107,0.06) 100%)',
-          border: '1px solid rgba(255,59,107,0.3)',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', padding: '10px 6px',
-        }}>
-          <div style={{
-            fontFamily: '"Syne", sans-serif', fontSize: 42, fontWeight: 900,
-            color: '#fff', lineHeight: 1, letterSpacing: -2,
-          }}>{totalMatches}</div>
-          <div style={{
-            fontSize: 9, fontWeight: 800, color: '#FF8FA3',
-            letterSpacing: 1.8, marginTop: 6, textAlign: 'center',
-          }}>MATCHES</div>
-        </div>
-
-        {/* Top genre */}
-        <div style={{
-          flex: 1, height: '100%', borderRadius: 18,
-          background: 'linear-gradient(155deg, rgba(155,59,255,0.22) 0%, rgba(155,59,255,0.06) 100%)',
-          border: '1px solid rgba(155,59,255,0.3)',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', padding: '10px 6px', gap: 6,
-        }}>
-          {topGenres[0] ? (
-            <>
-              <div style={{ fontSize: 30, lineHeight: 1 }}>{topGenres[0].emoji}</div>
-              <div style={{
-                fontSize: 9.5, fontWeight: 800, color: '#D8B6FF',
-                letterSpacing: 1.2, textAlign: 'center', lineHeight: 1.25,
-                maxWidth: 100, overflow: 'hidden',
-              }}>{topGenres[0].name.toUpperCase()}</div>
-            </>
-          ) : (
-            <>
-              <div style={{ fontSize: 30, lineHeight: 1 }}>🎬</div>
-              <div style={{
-                fontSize: 9.5, fontWeight: 800, color: '#D8B6FF',
-                letterSpacing: 1.2, textAlign: 'center',
-              }}>GÉNERO</div>
-            </>
-          )}
-        </div>
-
-        {/* Top movie (poster) */}
-        <div style={{
-          flex: 1, height: '100%', borderRadius: 18, overflow: 'hidden',
-          position: 'relative',
-          border: '1px solid rgba(78,255,214,0.25)',
-          background: '#1a0f2e',
-        }}>
-          {bestMatch?.poster_path ? (
-            <>
-              <img src={posterUrl(bestMatch.poster_path, 'w342')} crossOrigin="anonymous" alt=""
-                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-              <div style={{
-                position: 'absolute', inset: 0,
-                background: 'linear-gradient(0deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.15) 50%, transparent 100%)',
-              }}/>
-              <div style={{
-                position: 'absolute', left: 10, right: 10, bottom: 10,
-                fontSize: 9, fontWeight: 800, color: '#4EFFD6',
-                letterSpacing: 1.8,
-              }}>TOP PELI</div>
-            </>
-          ) : (
-            <div style={{
-              height: '100%', display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center', gap: 6,
-              background: 'linear-gradient(155deg, rgba(78,255,214,0.18) 0%, rgba(78,255,214,0.04) 100%)',
-            }}>
-              <div style={{ fontSize: 30 }}>🍿</div>
-              <div style={{
-                fontSize: 9.5, fontWeight: 800, color: '#4EFFD6',
-                letterSpacing: 1.2,
-              }}>TOP PELI</div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ══════════ FOOTER CTA  y=552, h=141 ══════════ */}
-      <div style={{
-        position: 'absolute', bottom: 0, left: 0, right: 0, height: 141,
-        background: BRAND_GRADIENT,
-        padding: '20px 24px',
-        display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-        overflow: 'hidden',
-      }}>
-        {/* Subtle shine overlay */}
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, height: '50%',
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.14) 0%, transparent 100%)',
-          pointerEvents: 'none',
-        }}/>
-
-        <div style={{ position: 'relative' }}>
-          <div style={{
-            fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.75)',
-            letterSpacing: 2.5, textTransform: 'uppercase', marginBottom: 6,
-          }}>Descúbrelo tú también</div>
-          <div style={{
-            fontFamily: '"Syne", sans-serif',
-            fontSize: 20, fontWeight: 900, color: '#fff',
-            lineHeight: 1.15, letterSpacing: -0.6,
-          }}>
-            ¿Con quién tienes<br/>mejor gusto cinematográfico?
-          </div>
-        </div>
-
-        <div style={{
-          position: 'relative',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          <div style={{
-            fontFamily: '"Syne", sans-serif', fontSize: 22, fontWeight: 900,
-            color: '#fff', letterSpacing: -0.8, lineHeight: 1,
-          }}>flickpick.app</div>
-          <div style={{
-            padding: '7px 14px', borderRadius: 999,
-            background: '#fff',
-            fontSize: 11, fontWeight: 800, color: '#FF3B6B', letterSpacing: 0.2,
-            whiteSpace: 'nowrap',
-          }}>Pruébalo gratis →</div>
-        </div>
-      </div>
-    </div>
-  );
-});
+// ── Share card extracted to ./WrappedShareCard.jsx (verbatim handoff repro) ──
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function RoomAnalysis() {
@@ -402,25 +101,18 @@ export default function RoomAnalysis() {
         await new Promise(r => setTimeout(r, 600)); // let entry animations finish
         if (cancelled) return;
 
-        const el = shareCardRef.current;
-        el.style.left = '0px';
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        if (cancelled) { el.style.left = '-420px'; return; }
-
-        const { default: html2canvas } = await import('html2canvas');
-        const canvas = await html2canvas(el, {
-          backgroundColor: '#0B0420',
-          scale: 2,
-          useCORS: true,
-          allowTaint: false,
-          logging: false,
-          width: el.offsetWidth,
-          height: el.offsetHeight,
+        // Capture the .story node (exact 1080×1920 canvas inside the wrapper).
+        // html-to-image is used instead of html2canvas because it correctly
+        // honours `background-clip: text` (flame gradient text in the handoff).
+        const story = shareCardRef.current?.querySelector('.story');
+        if (!story) return;
+        const htmlToImage = await import('html-to-image');
+        const blob = await htmlToImage.toBlob(story, {
+          width: 1080, height: 1920,
+          pixelRatio: 1,
+          cacheBust: true,
+          backgroundColor: '#06010F',
         });
-        el.style.left = '-420px';
-        if (cancelled) return;
-
-        const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
         if (cancelled || !blob) return;
 
         shareBlobRef.current = blob;
@@ -501,10 +193,14 @@ export default function RoomAnalysis() {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#07050E', overflowY: 'auto', overflowX: 'hidden' }}>
-      <AmbientBackdrop hue={290}/>
+      {/* Backdrop pinned al viewport para que no aparezca una "raya"
+          al scrollear más allá de su altura intrínseca. */}
+      <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
+        <AmbientBackdrop hue={290}/>
+      </div>
 
       {/* Hidden share card for image capture */}
-      <ShareCard ref={shareCardRef} analysis={analysis} room={room} />
+      <WrappedShareCard ref={shareCardRef} room={room} />
 
       <div style={{
         position: 'relative', zIndex: 2,
@@ -517,9 +213,23 @@ export default function RoomAnalysis() {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '16px 0',
         }}>
-          <BackButton onClick={() => navigate(-1)}/>
+          {/* navigate(-1) is unreliable on mobile (no history entry when
+              we landed here via a `replace:true` redirect, e.g. host
+              closed the room while a guest was mid-swipe). Force /home. */}
+          <BackButton onClick={() => navigate('/home', { replace: true })}/>
           <div style={{ fontSize: 12, fontWeight: 700, color: FP.textDim, letterSpacing: 2, textTransform: 'uppercase' }}>FlickPick Wrapped</div>
-          <div style={{ width: 40 }}/>
+          <button
+            onClick={() => navigate('/home', { replace: true })}
+            aria-label="Salir"
+            style={{
+              width: 40, height: 40, borderRadius: 999,
+              background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: '#fff', cursor: 'pointer', padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18, fontWeight: 600,
+            }}
+          >×</button>
         </div>
 
         {/* ── Hero: Compatibility % ── */}
@@ -545,7 +255,7 @@ export default function RoomAnalysis() {
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             }}>
               <div style={{
-                fontFamily: '"Syne", "Space Grotesk", sans-serif',
+                fontFamily: '"Inter", "Space Grotesk", sans-serif',
                 fontSize: 64, fontWeight: 900, lineHeight: 1,
                 background: compatTier.bg,
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
@@ -565,7 +275,7 @@ export default function RoomAnalysis() {
           }}>
             <div style={{ fontSize: 24, marginBottom: 4 }}>{compatTier.emoji}</div>
             <div style={{
-              fontFamily: '"Syne", "Space Grotesk", sans-serif',
+              fontFamily: '"Inter", "Space Grotesk", sans-serif',
               fontSize: 22, fontWeight: 800, color: '#fff', letterSpacing: -0.5,
             }}>{compatTier.label}</div>
             <div style={{ fontSize: 13, color: FP.textDim, marginTop: 6, fontStyle: 'italic' }}>
@@ -594,7 +304,7 @@ export default function RoomAnalysis() {
             }}>
               <div style={{ fontSize: 22 }}>{s.emoji}</div>
               <div style={{
-                fontFamily: '"Syne", sans-serif',
+                fontFamily: '"Inter", sans-serif',
                 fontSize: 30, fontWeight: 900, color: '#fff', lineHeight: 1, marginTop: 4,
               }}>
                 {visible && <AnimatedNumber target={s.value} duration={900}/>}
@@ -692,26 +402,53 @@ export default function RoomAnalysis() {
           <>
             <SectionTitle>Vuestra mejor peli juntos</SectionTitle>
             <div style={{
-              display: 'flex', gap: 14, padding: '14px 16px', borderRadius: 20,
+              padding: '14px 16px', borderRadius: 20,
               background: 'rgba(255,255,255,0.04)',
               border: '1px solid rgba(255,59,107,0.25)',
               marginBottom: bestMatch && hiddenGem ? 16 : 24,
               opacity: visible ? 1 : 0,
               transition: 'all 0.6s 0.9s',
             }}>
-              <div style={{ width: 64, height: 90, borderRadius: 12, overflow: 'hidden', flexShrink: 0, position: 'relative', background: '#1a0f2e' }}>
-                {bestMatch.poster_path
-                  ? <img src={posterUrl(bestMatch.poster_path, 'w342')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
-                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🎬</div>
-                }
+              <div style={{ display: 'flex', gap: 14 }}>
+                <div style={{ width: 64, height: 90, borderRadius: 12, overflow: 'hidden', flexShrink: 0, position: 'relative', background: '#1a0f2e' }}>
+                  {bestMatch.poster_path
+                    ? <img src={posterUrl(bestMatch.poster_path, 'w342')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}/>
+                    : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🎬</div>
+                  }
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: FP.textDim, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>🏆 Top rated</div>
+                  <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 17, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{bestMatch.title || bestMatch.name}</div>
+                  {bestMatch.vote_average > 0 && (
+                    <div style={{ marginTop: 5, fontSize: 14, fontWeight: 700, color: '#FFD166' }}>★ {bestMatch.vote_average.toFixed(1)}</div>
+                  )}
+                </div>
               </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: FP.textDim, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>🏆 Top rated</div>
-                <div style={{ fontFamily: '"Syne", sans-serif', fontSize: 17, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{bestMatch.title || bestMatch.name}</div>
-                {bestMatch.vote_average > 0 && (
-                  <div style={{ marginTop: 5, fontSize: 14, fontWeight: 700, color: '#FFD166' }}>★ {bestMatch.vote_average.toFixed(1)}</div>
-                )}
-              </div>
+              {/* Showtimes button — visible when this room covers cinema
+                  releases. Lets the group jump to Google's showtimes
+                  module for the best match without leaving the analysis. */}
+              {room.preferences?.platforms?.includes('cartelera') && (
+                <button
+                  type="button"
+                  onClick={() => openShowtimes(bestMatch.title || bestMatch.name)}
+                  style={{
+                    marginTop: 12, width: '100%', height: 44,
+                    borderRadius: 999, cursor: 'pointer',
+                    background: 'linear-gradient(135deg, rgba(59,130,246,0.28), rgba(59,130,246,0.14))',
+                    border: '1px solid rgba(96,165,250,0.55)',
+                    color: '#93C5FD', fontWeight: 700, fontSize: 13,
+                    fontFamily: '"Space Grotesk", system-ui',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    boxShadow: '0 4px 14px rgba(59,130,246,0.20)',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 21s-7-7.5-7-12a7 7 0 1114 0c0 4.5-7 12-7 12z" stroke="#93C5FD" strokeWidth="2" strokeLinejoin="round"/>
+                    <circle cx="12" cy="9" r="2.5" stroke="#93C5FD" strokeWidth="2"/>
+                  </svg>
+                  Sesiones cerca de ti
+                </button>
+              )}
             </div>
           </>
         )}
@@ -736,7 +473,7 @@ export default function RoomAnalysis() {
               </div>
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#C084FC', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>💎 Poco conocida</div>
-                <div style={{ fontFamily: '"Syne", sans-serif', fontSize: 17, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{hiddenGem.title || hiddenGem.name}</div>
+                <div style={{ fontFamily: '"Inter", sans-serif', fontSize: 17, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>{hiddenGem.title || hiddenGem.name}</div>
                 <div style={{ marginTop: 5, fontSize: 12, color: FP.textDim }}>
                   Popularidad baja, gusto alto 🙌
                 </div>
@@ -841,13 +578,19 @@ export default function RoomAnalysis() {
           <button
             onClick={() => navigate(`/room/${roomId}/matches`)}
             style={{
-              width: '100%', height: 48, borderRadius: 999,
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+              width: '100%', height: 52, borderRadius: 999,
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04))',
+              border: '1px solid rgba(255,255,255,0.20)',
+              color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer',
               fontFamily: '"Space Grotesk"',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}
-          >Ver matches 🍿</button>
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M3 6h18M3 12h18M3 18h18" stroke="#fff" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            Ver todos los matches{totalMatches > 0 ? ` (${totalMatches})` : ''}
+          </button>
         </div>
       </div>
 

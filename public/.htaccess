@@ -1,6 +1,17 @@
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
+
+  # Proxy API + WebSocket to the Node backend on 127.0.0.1:3001.
+  # The host's virtualhost-level ProxyPass stopped firing (2026-05-07);
+  # declaring the proxy here keeps things working from .htaccess as a
+  # belt-and-braces measure. Requires mod_proxy + mod_proxy_http (and
+  # mod_proxy_wstunnel for the upgrade); both ship enabled on Hostinger.
+  RewriteRule ^api/(.*)$ http://127.0.0.1:3001/api/$1 [P,L,QSA]
+  RewriteRule ^health$ http://127.0.0.1:3001/health [P,L]
+
+  # SPA fallback: anything else that isn't a real file/dir → index.html
+  # so React Router can take over.
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule ^ index.html [L]
@@ -9,11 +20,26 @@
 <IfModule mod_headers.c>
   Header set X-Powered-By "Hostinger Horizons"
 
-  # Cache everything on CDN by default
+  # Cache everything on CDN by default (browser revalidates each time).
   Header set Cache-Control "public, s-maxage=604800, max-age=0"
-  
-  # Cache in browser all assets
-  <If "%{REQUEST_URI} =~ m#^/assets/.*$#">
-    Header set Cache-Control "public, max-age=604800"
-  </If>
+
+  # Hashed assets are immutable — long browser cache.
+  <FilesMatch "^index-[a-f0-9]+\.(js|css)$">
+    Header set Cache-Control "public, max-age=604800, immutable"
+  </FilesMatch>
+  <FilesMatch "^badging-[a-f0-9]+\.js$">
+    Header set Cache-Control "public, max-age=604800, immutable"
+  </FilesMatch>
+  <FilesMatch "^workbox-[a-f0-9]+\.js$">
+    Header set Cache-Control "public, max-age=604800, immutable"
+  </FilesMatch>
+
+  # NEVER cache the service-worker bootstrap files. The browser must
+  # always re-fetch /sw.js to detect a new release; if a stale copy is
+  # served from disk/CDN the auto-update path can't fire.
+  <FilesMatch "^(sw\.js|registerSW\.js|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
 </IfModule>

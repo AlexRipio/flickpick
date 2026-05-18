@@ -1,16 +1,16 @@
 /**
- * avatars.js — Avatar generation (DiceBear) + upload (Supabase Storage).
+ * avatars.js — Avatar generation (DiceBear) + upload (client-side data URL).
  *
  * Two sources of avatars:
  *   1. DiceBear SVG URLs: cheap, deterministic, no backend. The default.
- *   2. User-uploaded photo stored in Supabase Storage (bucket "avatars").
+ *   2. User-uploaded photo: resized client-side to a square data URL and
+ *      stored directly in the profile record (PostgreSQL via JWT API).
  *
- * A `profile.avatarUrl` is always the final URL — regardless of source — so
- * rendering code is uniform. `profile.avatarStyle` + `profile.avatarSeed` are
- * kept for DiceBear so the picker knows what's selected and can regenerate.
+ * Supabase has been fully removed. Uploads no longer require external storage:
+ * the image is resized to ≤512px and saved as a base64 data URL inside the
+ * profile JSON. A `profile.avatarUrl` is always the final URL — regardless of
+ * source — so rendering code stays uniform.
  */
-
-import { supabase, hasSupabase } from './supabase';
 
 // ── DiceBear ────────────────────────────────────────────────────────────────
 const DICEBEAR_BASE = 'https://api.dicebear.com/9.x';
@@ -33,8 +33,6 @@ const BG_COLORS = ['b6e3f4', 'c0aede', 'd1d4f9', 'ffd5dc', 'ffdfbf', 'c7f0bd'];
 export function dicebearUrl(style, seed, { bg } = {}) {
   const s = encodeURIComponent(String(seed ?? 'flickpick'));
   const params = new URLSearchParams({ seed: s });
-  // Randomise background colour deterministically from seed so the picker
-  // previews aren't all the same shade.
   if (bg !== false) {
     const idx = Math.abs(hashString(String(seed ?? 'flickpick'))) % BG_COLORS.length;
     params.set('backgroundColor', bg || BG_COLORS[idx]);
@@ -58,41 +56,60 @@ export function freshSeed(baseName = 'flickpick') {
   return `${baseName}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-// ── Upload ──────────────────────────────────────────────────────────────────
-// Supabase Storage bucket must exist with public read. Policy example:
-//   Bucket: avatars · public read: true · authenticated users can insert/update
-//   files in their own "userId/..." path.
-
-const BUCKET = 'avatars';
-const MAX_BYTES = 4 * 1024 * 1024; // 4 MB
+// ── Upload (client-side resize → data URL) ──────────────────────────────────
+const MAX_BYTES = 4 * 1024 * 1024; // 4 MB raw input
+const MAX_SIDE  = 512;             // px — square output edge
+const JPEG_Q    = 0.85;
 
 /**
- * Uploads a File/Blob to Supabase Storage and returns a public URL.
- * Throws on error. Caller should catch and show a toast.
+ * Resize an image File to a square ≤MAX_SIDE and return a data URL (JPEG).
+ * Center-crop preserves face/subject in most photos.
+ * Keeps the avatar payload small (~30–150KB) so it fits in the profile JSON.
  */
-export async function uploadAvatar(file, userId) {
-  if (!hasSupabase) throw new Error('Supabase no configurado. No se puede subir foto.');
+function resizeToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+    reader.onload = () => {
+      img.onerror = () => reject(new Error('Imagen inválida.'));
+      img.onload = () => {
+        try {
+          const side = Math.min(img.naturalWidth, img.naturalHeight);
+          const sx = (img.naturalWidth  - side) / 2;
+          const sy = (img.naturalHeight - side) / 2;
+          const out = Math.min(MAX_SIDE, side);
+          const canvas = document.createElement('canvas');
+          canvas.width = out;
+          canvas.height = out;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, sx, sy, side, side, 0, 0, out, out);
+          const dataUrl = canvas.toDataURL('image/jpeg', JPEG_Q);
+          resolve(dataUrl);
+        } catch (e) { reject(e); }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Process a File for avatar use. Returns a data URL ready to be stored on
+ * the profile (no external storage required). Throws on invalid input.
+ */
+export async function uploadAvatar(file /*, userId */) {
   if (!file) throw new Error('Selecciona una imagen primero.');
   if (!/^image\//.test(file.type)) throw new Error('El archivo debe ser una imagen.');
   if (file.size > MAX_BYTES) throw new Error('La imagen es demasiado grande (máx 4 MB).');
-  if (!userId) throw new Error('Inicia sesión para subir una foto.');
-
-  const ext  = (file.name.split('.').pop() || 'png').toLowerCase();
-  const path = `${userId}/avatar-${Date.now()}.${ext}`;
-
-  const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
-    contentType: file.type,
-    upsert: true,
-    cacheControl: '3600',
-  });
-  if (error) throw new Error(error.message || 'Error al subir la imagen.');
-
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  if (!data?.publicUrl) throw new Error('No se pudo obtener la URL pública.');
-  return data.publicUrl;
+  return resizeToDataUrl(file);
 }
 
-/** True when we have Supabase + the user is authenticated (so upload would work). */
-export function canUpload() {
-  return hasSupabase;
+/**
+ * True when the user has a connected account (email present from magic link
+ * or Google OAuth). Guest profiles created locally (sin email) cannot persist
+ * an uploaded photo across devices, so the picker shows a soft warning.
+ */
+export function canUpload(profile) {
+  return !!profile?.email;
 }

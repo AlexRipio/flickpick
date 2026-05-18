@@ -1,17 +1,27 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AmbientBackdrop, FullLogo, GoogleGlyph, GradientButton } from '@/components/fp/primitives';
+import { AmbientBackdrop, FullLogo, GradientButton, GoogleGlyph } from '@/components/fp/primitives';
 import { Poster } from '@/components/fp/Poster';
 import { FP } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
 import { getTrending } from '@/lib/tmdb';
-import { signInWithGoogle } from '@/lib/auth';
+import { processGoogleUserInfo } from '@/lib/auth';
+import { consumePendingJoin } from '@/lib/pendingJoin';
+
+function postAuthDestination() {
+  const code = consumePendingJoin();
+  return code ? `/g/${code}` : '/home';
+}
+
+const GOOGLE_CLIENT_ID = '480695177694-uip9jvgsh4gf7rhg03q2omskad5j1ai8.apps.googleusercontent.com';
 
 const WelcomeScreen = () => {
   const navigate = useNavigate();
   const { setProfileFields } = useProfile();
   const [posters, setPosters] = useState([]);
+  const [gError, setGError] = useState('');
   const [gLoading, setGLoading] = useState(false);
+  const tokenClientRef = useRef(null);
 
   useEffect(() => {
     getTrending({ page: 1 })
@@ -19,7 +29,46 @@ const WelcomeScreen = () => {
       .catch(() => setPosters([]));
   }, []);
 
-  // Bigger posters, more dispersed, more dynamic motion.
+  useEffect(() => {
+    const init = () => {
+      if (!window.google?.accounts?.oauth2) return;
+      try {
+        tokenClientRef.current = window.google.accounts.oauth2.initTokenClient({
+          client_id: GOOGLE_CLIENT_ID,
+          scope: 'openid email profile',
+          callback: async (response) => {
+            if (!response?.access_token) return;
+            setGError('');
+            setGLoading(true);
+            try {
+              const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${response.access_token}` },
+              });
+              const userInfo = await r.json();
+              const { profile } = await processGoogleUserInfo(userInfo);
+              if (profile) {
+                setProfileFields(profile);
+                navigate(postAuthDestination(), { replace: true });
+              }
+            } catch (e) {
+              setGError(e.message || 'Error al iniciar sesion con Google.');
+            } finally {
+              setGLoading(false);
+            }
+          },
+        });
+      } catch {}
+    };
+    const timer = setTimeout(init, 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleGoogleClick = () => {
+    if (!tokenClientRef.current) return;
+    setGError('');
+    tokenClientRef.current.requestAccessToken();
+  };
+
   const positions = [
     { top: '-2%',  left: '-14%', rot: -14, scale: 0.95, dur: 7.5, delay: 0 },
     { top: '-6%',  right: '-12%', rot: 10, scale: 1.0,  dur: 8.0, delay: 0.3 },
@@ -30,26 +79,10 @@ const WelcomeScreen = () => {
     { top: '48%',  right: '8%',   rot:   4, scale: 0.72, dur: 7.8, delay: 1.8 },
   ];
 
-  const onGoogle = async () => {
-    setGLoading(true);
-    try {
-      const res = await signInWithGoogle();
-      if (res?.profile) {
-        setProfileFields(res.profile);
-        navigate('/home', { replace: true });
-      }
-    } catch (e) {
-      alert(e.message || 'No se pudo iniciar sesión con Google.');
-    } finally {
-      setGLoading(false);
-    }
-  };
-
   return (
     <div style={{ position: 'fixed', inset: 0, overflow: 'hidden' }}>
       <AmbientBackdrop hue={300}/>
 
-      {/* Floating poster collage — bigger, richer */}
       <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
         {positions.map((p, i) => {
           const movie = posters[i];
@@ -79,7 +112,6 @@ const WelcomeScreen = () => {
         })}
       </div>
 
-      {/* Strong fade overlay so posters feel like they live in the scene */}
       <div style={{
         position: 'absolute', inset: 0, zIndex: 2,
         background: `
@@ -88,61 +120,94 @@ const WelcomeScreen = () => {
         `,
       }}/>
 
-      {/* Content */}
       <div style={{
         position: 'absolute', inset: 0, zIndex: 3,
         display: 'flex', flexDirection: 'column',
         padding: '36px 24px 32px', justifyContent: 'space-between',
         maxWidth: 480, margin: '0 auto',
       }}>
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          animation: 'fp-entrance 0.8s ease-out both',
-        }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'fp-entrance 0.8s ease-out both' }}>
           <FullLogo size={108} animated/>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
           <div style={{ animation: 'fp-entrance 0.8s 0.15s ease-out both' }}>
             <h1 style={{
-              fontFamily: '"Syne", "Space Grotesk", system-ui',
+              fontFamily: '"Inter", "Space Grotesk", system-ui',
               fontSize: 48, fontWeight: 800, letterSpacing: -2,
               color: FP.text, margin: 0, lineHeight: 1.0,
             }}>
               Acaba con<br/>
               <span style={{
-                background: FP.flame,
+                backgroundImage: 'linear-gradient(135deg,#FFB547,#FF6B4A,#FF3B6B,#9B3BFF,#FF3B6B,#FF6B4A,#FFB547)',
+                backgroundSize: '200% 100%',
+                backgroundRepeat: 'repeat',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
-                backgroundSize: '220% 100%',
-                animation: 'fp-shimmer 3.5s linear infinite',
+                backgroundClip: 'text',
+                color: 'transparent',
+                willChange: 'background-position',
+                animation: 'fp-flame-flow 3.5s linear infinite',
               }}>la guerra del scroll.</span>
             </h1>
-            <p style={{
-              fontSize: 16, color: FP.textDim, margin: '14px 0 0',
-              lineHeight: 1.5, maxWidth: 340,
-            }}>
+            <p style={{ fontSize: 16, color: FP.textDim, margin: '14px 0 0', lineHeight: 1.5, maxWidth: 340 }}>
               Desliza juntos. Haced match al instante. Ved la que os apetece a ambos.
             </p>
           </div>
 
-          <div style={{
-            display: 'flex', flexDirection: 'column', gap: 12,
-            animation: 'fp-entrance 0.8s 0.28s ease-out both',
-          }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: 'fp-entrance 0.8s 0.28s ease-out both' }}>
             <GradientButton variant="flame" onClick={() => navigate('/signup')}>
               Empieza — es gratis
             </GradientButton>
-            <GradientButton variant="ghost" onClick={onGoogle} disabled={gLoading}>
-              <GoogleGlyph size={18}/>
-              {gLoading ? 'Conectando…' : 'Continuar con Google'}
-            </GradientButton>
+
+            <button
+              onClick={handleGoogleClick}
+              disabled={gLoading}
+              style={{
+                width: '100%',
+                height: 56,
+                borderRadius: 999,
+                background: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.18)',
+                color: '#ffffff',
+                fontFamily: '"Space Grotesk", "Inter", system-ui, sans-serif',
+                fontSize: 16,
+                fontWeight: 700,
+                letterSpacing: 0.2,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                cursor: gLoading ? 'not-allowed' : 'pointer',
+                boxShadow: 'none',
+                transition: 'transform 0.12s, box-shadow 0.2s',
+                opacity: gLoading ? 0.6 : 1,
+              }}
+              onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.97)'; }}
+              onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+            >
+              <GoogleGlyph size={20} />
+              {gLoading ? 'Conectando...' : 'Continuar con Google'}
+            </button>
+
+            {gError && (
+              <div style={{
+                padding: '10px 14px', borderRadius: 12,
+                background: 'rgba(255,59,107,0.12)',
+                border: '1px solid rgba(255,59,107,0.35)',
+                color: '#FFB0C2', fontSize: 13, fontWeight: 600, textAlign: 'center',
+              }}>
+                {gError}
+              </div>
+            )}
+
             <button onClick={() => navigate('/signin')} style={{
               background: 'transparent', border: 'none', color: FP.textDim,
               fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: '6px 0',
               fontFamily: '"Inter", system-ui',
             }}>
-              ¿Ya tienes cuenta? <span style={{ color: FP.flameSolid }}>Inicia sesión</span>
+              Ya tienes cuenta? <span style={{ color: FP.flameSolid }}>Inicia sesion</span>
             </button>
           </div>
 
@@ -151,7 +216,10 @@ const WelcomeScreen = () => {
             maxWidth: 300, margin: '0 auto', lineHeight: 1.5,
             animation: 'fp-entrance 0.8s 0.36s ease-out both',
           }}>
-            Al continuar aceptas los Términos y la Política de Privacidad.
+            Al continuar aceptas los{' '}
+            <a href="/terminos" style={{ color: FP.flameSolid, textDecoration: 'none' }}>Términos</a>{' '}
+            y la{' '}
+            <a href="/privacidad" style={{ color: FP.flameSolid, textDecoration: 'none' }}>Política de Privacidad</a>.
           </div>
         </div>
       </div>

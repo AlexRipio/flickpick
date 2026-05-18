@@ -8,7 +8,18 @@ import { getTrending, posterUrl } from '@/lib/tmdb';
 import { isInWatchlist, toggleWatchlist } from '@/lib/watchlist';
 import { subscribe } from '@/lib/roomStore';
 import { getWatchlist, subscribeWatchlist } from '@/lib/watchlist';
+import OnboardingTutorial, { hasSeenOnboarding } from '@/components/OnboardingTutorial';
+import UpdatesModal from '@/components/UpdatesModal';
+import { shouldShowUpdates } from '@/lib/appVersion';
 import DetailSheet from '@/components/DetailSheet';
+import HomeSkeleton from '@/components/HomeSkeleton';
+
+function getTimeOfDay() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return 'Esta Mañana';
+  if (hour >= 12 && hour < 19) return 'Esta Tarde';
+  return 'Esta Noche';
+}
 
 function readAllRooms() {
   try { return JSON.parse(localStorage.getItem('flickpick.rooms.v1') || '{}'); } catch { return {}; }
@@ -30,6 +41,30 @@ const HomeScreen = () => {
   const [tick, setTick]                 = useState(0);
   const [watchlistTick, setWatchlistTick] = useState(0);
   const [detailMovie, setDetailMovie]   = useState(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showUpdates, setShowUpdates] = useState(false);
+
+  // Cadena determinista: si el usuario nunca vio el tutorial, sale el
+  // tutorial. Solo cuando el tutorial se cierra (o si ya lo vio antes)
+  // entra el modal de novedades. Persistencia per-profile.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!profile?.id) return;
+    if (!hasSeenOnboarding(profile.id)) {
+      setShowOnboarding(true);
+    } else if (shouldShowUpdates(profile.id)) {
+      setShowUpdates(true);
+    }
+  }, [authLoading, profile?.id]);
+
+  const handleOnboardingClose = () => {
+    setShowOnboarding(false);
+    // tras cerrar el tutorial, evalúa novedades de la cuenta actual
+    if (shouldShowUpdates(profile?.id)) {
+      // pequeño delay para que la salida del tutorial respire
+      setTimeout(() => setShowUpdates(true), 220);
+    }
+  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -57,13 +92,25 @@ const HomeScreen = () => {
     const all = readAllRooms();
     let active = null;
     const mine = [];
+    // Only consider a room "active" if it had activity in the last 6h.
+    // Older lobby/live rooms are abandoned — without this guard, closing
+    // one would just promote the next stale lobby to active forever.
+    const ACTIVE_WINDOW_MS = 6 * 60 * 60 * 1000;
+    const cutoff = Date.now() - ACTIVE_WINDOW_MS;
+    const lastTouchedAt = (r) => {
+      const t = r.updatedAt || r.lastMatchAt || r.createdAt || 0;
+      if (typeof t === 'string') return Date.parse(t) || 0;
+      return t || 0;
+    };
     for (const r of Object.values(all)) {
       if (!r) continue;
-      if (profile?.id && r.members?.some(m => m.id === profile.id)) {
-        mine.push(r);
-        if (r.status !== 'ended') {
-          if (!active || (r.createdAt || 0) > (active.createdAt || 0)) active = r;
-        }
+      if (!profile?.id) continue;
+      const isMember = r.members?.some(m => m.id === profile.id);
+      const isOwner  = r.ownerId === profile.id;
+      if (!isMember && !isOwner) continue;
+      mine.push(r);
+      if (r.status !== 'ended' && lastTouchedAt(r) >= cutoff) {
+        if (!active || lastTouchedAt(r) > lastTouchedAt(active)) active = r;
       }
     }
     mine.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -74,14 +121,7 @@ const HomeScreen = () => {
 
   // ── Now safe to do conditional render ────────────────────────────────────
   if (authLoading) {
-    return (
-      <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0A070F' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-          <img src="/logo.png" alt="FlickPick" style={{ width: 56, height: 56, objectFit: 'cover', objectPosition: 'center top', transform: 'scale(1.55) translateY(-14%)', transformOrigin: 'center top', animation: 'fp-pulse 1.4s ease-in-out infinite' }}/>
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Cargando sesión…</div>
-        </div>
-      </div>
-    );
+    return <HomeSkeleton />;
   }
 
   const user    = profile || { name: 'Invitado' };
@@ -96,10 +136,22 @@ const HomeScreen = () => {
 
         {/* ── Header ────────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <FlameMark size={30} animated/>
-            <FlickPickWordmark height={19}/>
-          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/marca')}
+            aria-label="Conoce la marca"
+            style={{
+              background: 'transparent', border: 'none', padding: 0, margin: 0,
+              cursor: 'pointer', display: 'flex', alignItems: 'center',
+            }}
+          >
+            <img
+              src="/imagotipo.webp"
+              alt="FlickPick"
+              style={{ height: 42, width: 'auto', display: 'block' }}
+              onError={(e) => { if (e.currentTarget.src.indexOf('logo.png') === -1) e.currentTarget.src = '/logo.png'; }}
+            />
+          </button>
           <button onClick={() => navigate('/profile')} style={{
             width: 40, height: 40, borderRadius: 999,
             border: '1.5px solid rgba(255,255,255,0.15)',
@@ -117,15 +169,15 @@ const HomeScreen = () => {
         {/* ── Greeting ──────────────────────────────────────────────────── */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12, color: FP.textMuted, letterSpacing: 2.5, textTransform: 'uppercase', marginBottom: 8 }}>
-            Esta noche
+            {getTimeOfDay()}
           </div>
           <h1 style={{
-            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontFamily: '"Inter", "Space Grotesk", sans-serif',
             fontSize: 34, fontWeight: 800, color: FP.text,
             margin: 0, letterSpacing: -1, lineHeight: 1.05,
           }}>
             Hola {user.name},<br/>
-            <span style={{ color: FP.textDim, fontWeight: 600 }}>¿qué os apetece hoy?</span>
+            <span style={{ color: FP.textDim, fontWeight: 600 }}>¿Qué te apetece ver hoy?</span>
           </h1>
         </div>
 
@@ -146,7 +198,12 @@ const HomeScreen = () => {
               <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
                 Sigue donde lo dejaste
               </div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginTop: 2 }}>Sala · {activeRoom.joinCode}</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginTop: 2 }}>
+                {activeRoom.name || `Sala · ${activeRoom.joinCode}`}
+              </div>
+              {activeRoom.name && (
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 1, fontFamily: 'ui-monospace, Menlo, monospace' }}>#{activeRoom.joinCode}</div>
+              )}
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>
                 {activeRoom.members?.length || 0} deslizando · {activeRoom.matches?.length || 0} matches
               </div>
@@ -280,6 +337,14 @@ const HomeScreen = () => {
           }}
         />
       )}
+
+      {showOnboarding && (
+        <OnboardingTutorial onClose={handleOnboardingClose} />
+      )}
+
+      {showUpdates && (
+        <UpdatesModal profileId={profile?.id} onClose={() => setShowUpdates(false)} />
+      )}
     </div>
   );
 };
@@ -320,7 +385,7 @@ function RoomMatchCard({ room, onClick }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 1,
       }}>
         <div style={{
-          fontFamily: '"Syne", sans-serif', fontSize: matchCount > 9 ? 18 : 22,
+          fontFamily: '"Inter", sans-serif', fontSize: matchCount > 9 ? 18 : 22,
           fontWeight: 800, color: matchCount > 0 ? '#4EFFD6' : FP.textMuted, lineHeight: 1,
         }}>{matchCount}</div>
         <div style={{ fontSize: 9, fontWeight: 700, color: FP.textMuted, letterSpacing: 0.5, textTransform: 'uppercase' }}>
@@ -332,7 +397,7 @@ function RoomMatchCard({ room, onClick }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontFamily: '"Space Grotesk", system-ui', fontSize: 15, fontWeight: 700, color: FP.text }}>
-            Sala · {room.joinCode}
+            {room.name || `Sala · ${room.joinCode}`}
           </span>
           <span style={{
             padding: '2px 7px', borderRadius: 999, background: 'rgba(255,255,255,0.06)',

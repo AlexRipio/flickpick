@@ -11,6 +11,7 @@ import {
   isInWatchlist, toggleWatchlist,
 } from '@/lib/watchlist';
 import DetailSheet from '@/components/DetailSheet';
+import ImportListSheet from '@/components/ImportListSheet';
 
 export default function WatchlistScreen() {
   const navigate = useNavigate();
@@ -19,6 +20,18 @@ export default function WatchlistScreen() {
   const [watchedTick, setWatchedTick] = useState(0);
   const [selected, setSelected]       = useState(null);
   const [toastMsg, setToastMsg]       = useState(null);
+  const [importOpen, setImportOpen]   = useState(false);
+  // View mode: 'list' (rows) or 'grid' (poster cells). Persisted so the
+  // user opens Mi Lista the way they last left it.
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem('flickpick.list-view') === 'grid' ? 'grid' : 'list'; }
+    catch { return 'list'; }
+  });
+  const setViewPersist = (v) => {
+    setView(v);
+    try { localStorage.setItem('flickpick.list-view', v); } catch {}
+    try { import('@/lib/userSync').then(({ userSync }) => userSync.listView(v)).catch(() => {}); } catch {}
+  };
 
   useEffect(() => {
     const u1 = subscribeWatchlist(() => setWantTick(t => t + 1));
@@ -79,15 +92,36 @@ export default function WatchlistScreen() {
       }}>
         {/* Title */}
         <h1 style={{
-          fontFamily: '"Syne", "Space Grotesk", sans-serif',
+          fontFamily: '"Inter", "Space Grotesk", sans-serif',
           fontSize: 30, fontWeight: 800, color: FP.text, margin: '0 0 6px', letterSpacing: -0.8,
         }}>Mi lista</h1>
-        <p style={{ fontSize: 13, color: FP.textDim, margin: '0 0 20px' }}>
+        <p style={{ fontSize: 13, color: FP.textDim, margin: '0 0 14px' }}>
           {wantList.length} por ver · {watchedList.length} vistas
         </p>
 
+        {/* Import list CTA — pegar bloque de texto y crear watchlist */}
+        <button
+          type="button"
+          onClick={() => setImportOpen(true)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '10px 16px', borderRadius: 999,
+            background: 'linear-gradient(135deg, rgba(255,107,74,0.18), rgba(155,59,255,0.18))',
+            border: '1px solid rgba(255,107,74,0.45)',
+            color: '#fff', fontWeight: 700, fontSize: 13,
+            fontFamily: '"Space Grotesk", system-ui',
+            cursor: 'pointer', marginBottom: 22,
+            boxShadow: '0 6px 18px rgba(255,107,74,0.18)',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"/>
+          </svg>
+          Importar lista de pelis
+        </button>
+
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           {[
             { key: 'want',    label: '🎬 Quiero ver', count: wantList.length    },
             { key: 'watched', label: '👁 Vistas',      count: watchedList.length },
@@ -105,6 +139,34 @@ export default function WatchlistScreen() {
             </button>
           ))}
         </div>
+
+        {/* View toggle (list / grid) — persisted in localStorage */}
+        {!isEmpty && (
+          <div style={{
+            display: 'flex', justifyContent: 'flex-end',
+            marginBottom: 14,
+          }}>
+            <div style={{
+              display: 'inline-flex', padding: 3, borderRadius: 999,
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}>
+              <ViewToggleBtn active={view === 'list'} onClick={() => setViewPersist('list')} ariaLabel="Vista de lista">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+              </ViewToggleBtn>
+              <ViewToggleBtn active={view === 'grid'} onClick={() => setViewPersist('grid')} ariaLabel="Vista de cuadrícula">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <rect x="4"  y="4"  width="7" height="7" rx="1.4" stroke="currentColor" strokeWidth="2"/>
+                  <rect x="13" y="4"  width="7" height="7" rx="1.4" stroke="currentColor" strokeWidth="2"/>
+                  <rect x="4"  y="13" width="7" height="7" rx="1.4" stroke="currentColor" strokeWidth="2"/>
+                  <rect x="13" y="13" width="7" height="7" rx="1.4" stroke="currentColor" strokeWidth="2"/>
+                </svg>
+              </ViewToggleBtn>
+            </div>
+          </div>
+        )}
 
         {/* Empty state */}
         {isEmpty && (
@@ -132,9 +194,12 @@ export default function WatchlistScreen() {
           </div>
         )}
 
-        {/* Movie list */}
-        {!isEmpty && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* Movie list — alternative renderings */}
+        {!isEmpty && view === 'list' && (
+          <div key="list" style={{
+            display: 'flex', flexDirection: 'column', gap: 12,
+            animation: 'fp-fade 0.18s ease-out both',
+          }}>
             {list.map(movie => (
               tab === 'want'
                 ? <WantCard
@@ -154,6 +219,29 @@ export default function WatchlistScreen() {
             ))}
           </div>
         )}
+
+        {!isEmpty && view === 'grid' && (
+          <div key="grid" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(105px, 1fr))',
+            gap: 10,
+            animation: 'fp-fade 0.18s ease-out both',
+          }}>
+            {list.map(movie => (
+              <PosterCell
+                key={movie.id}
+                movie={movie}
+                tab={tab}
+                onOpen={() => setSelected(movie)}
+                onRemove={() => tab === 'want' ? handleRemoveWant(movie.id) : handleRemoveWatched(movie.id)}
+                onMarkWatched={() => handleMarkWatched(movie)}
+                onUnmark={() => handleUnmark(movie)}
+              />
+            ))}
+          </div>
+        )}
+
+        <style>{`@keyframes fp-fade { from { opacity: 0; } to { opacity: 1; } }`}</style>
       </div>
 
       {/* Toast */}
@@ -176,6 +264,18 @@ export default function WatchlistScreen() {
           }}
         />
       )}
+
+      <ImportListSheet
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={({ added, skipped }) => {
+          showToast({
+            type: 'add',
+            title: `${added} ${added === 1 ? 'añadida' : 'añadidas'} a tu lista`,
+            sub: skipped > 0 ? `${skipped} omitidas` : undefined,
+          });
+        }}
+      />
     </div>
   );
 }
@@ -193,9 +293,11 @@ function WatchlistToast({ msg }) {
 
   return (
     <div style={{
-      position: 'fixed', bottom: 88, left: '50%',
+      position: 'fixed',
+      bottom: 'calc(env(safe-area-inset-bottom, 0px) + 140px)',
+      left: '50%',
       transform: `translateX(-50%) translateY(${visible ? 0 : 22}px)`,
-      zIndex: 999, pointerEvents: 'none',
+      zIndex: 2147483647, pointerEvents: 'none',
       background: 'linear-gradient(135deg, rgba(22,12,46,0.97) 0%, rgba(12,6,28,0.97) 100%)',
       backdropFilter: 'blur(24px)',
       border: `1px solid ${accentSoft}`,
@@ -305,7 +407,7 @@ function WantCard({ movie, onOpen, onMarkWatched, onRemove }) {
         {/* Info */}
         <div onClick={onOpen} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
           <div style={{
-            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontFamily: '"Inter", "Space Grotesk", sans-serif',
             fontSize: backdrop ? 16 : 15, fontWeight: 800, color: FP.text, lineHeight: 1.2,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>{title}</div>
@@ -417,7 +519,7 @@ function WatchedCard({ movie, onOpen, onUnmark, onRemove }) {
       {/* Info */}
       <div onClick={onOpen} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
         <div style={{
-          fontFamily: '"Syne", "Space Grotesk", sans-serif',
+          fontFamily: '"Inter", "Space Grotesk", sans-serif',
           fontSize: 15, fontWeight: 800, color: FP.textDim, lineHeight: 1.2,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{title}</div>
@@ -467,6 +569,137 @@ function WatchedCard({ movie, onOpen, onUnmark, onRemove }) {
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
             <path d="M6 6l12 12M6 18L18 6" stroke="rgba(255,255,255,0.5)" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── View toggle button ───────────────────────────────────────────────
+function ViewToggleBtn({ active, onClick, children, ariaLabel }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      aria-pressed={active}
+      style={{
+        width: 36, height: 32, borderRadius: 999, border: 'none',
+        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: active ? 'rgba(255,107,74,0.20)' : 'transparent',
+        color: active ? '#fff' : 'rgba(255,255,255,0.55)',
+        transition: 'background 0.15s, color 0.15s',
+      }}
+    >{children}</button>
+  );
+}
+
+// ── Grid poster cell — visual square card with quick-remove badge ────
+function PosterCell({ movie, tab, onOpen, onRemove, onMarkWatched, onUnmark }) {
+  const [hover, setHover] = React.useState(false);
+  const title = movie.title || movie.name;
+  const year  = (movie.release_date || movie.first_air_date || '').slice(0, 4);
+  const poster = posterUrl(movie.poster_path, 'w342');
+
+  const handleQuick = (e) => {
+    e.stopPropagation();
+    if (tab === 'want') onMarkWatched?.();
+    else onUnmark?.();
+  };
+  const handleRemove = (e) => {
+    e.stopPropagation();
+    onRemove?.();
+  };
+
+  return (
+    <div
+      onClick={onOpen}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        position: 'relative', cursor: 'pointer',
+        borderRadius: 14, overflow: 'hidden',
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: hover ? '0 12px 30px rgba(0,0,0,0.45)' : '0 4px 14px rgba(0,0,0,0.30)',
+        transform: hover ? 'translateY(-3px)' : 'translateY(0)',
+        transition: 'transform 0.18s, box-shadow 0.18s',
+      }}
+    >
+      <div style={{ position: 'relative', aspectRatio: '2/3', background: '#1a0f2e' }}>
+        {poster
+          ? <img src={poster} alt={title} loading="lazy"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}/>
+          : <div style={{
+              width: '100%', height: '100%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 36, color: 'rgba(255,255,255,0.4)',
+            }}>🎬</div>}
+
+        {/* Bottom scrim with title */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.10) 50%, transparent 80%)',
+          pointerEvents: 'none',
+        }}/>
+        <div style={{
+          position: 'absolute', bottom: 6, left: 8, right: 8, color: '#fff',
+        }}>
+          <div style={{
+            fontFamily: '"Space Grotesk", system-ui',
+            fontSize: 12, fontWeight: 700, lineHeight: 1.15,
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            textShadow: '0 1px 4px rgba(0,0,0,0.6)',
+          }}>{title}</div>
+          {year && (
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)', marginTop: 2 }}>{year}</div>
+          )}
+        </div>
+
+        {/* Quick action top-left: mark watched (or unmark) */}
+        <button
+          type="button"
+          onClick={handleQuick}
+          aria-label={tab === 'want' ? 'Marcar como vista' : 'Mover a Quiero ver'}
+          title={tab === 'want' ? 'Marcar como vista' : 'Mover a Quiero ver'}
+          style={{
+            position: 'absolute', top: 6, left: 6,
+            width: 26, height: 26, borderRadius: 999, padding: 0,
+            background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
+            border: '1px solid rgba(255,255,255,0.18)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          {tab === 'want' ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" stroke="#60A5FA" strokeWidth="2" strokeLinejoin="round"/>
+              <circle cx="12" cy="12" r="3" stroke="#60A5FA" strokeWidth="2"/>
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+              <path d="M3 12h14M9 6l-6 6 6 6" stroke="#FFB199" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          )}
+        </button>
+
+        {/* Remove top-right */}
+        <button
+          type="button"
+          onClick={handleRemove}
+          aria-label="Eliminar"
+          title="Eliminar"
+          style={{
+            position: 'absolute', top: 6, right: 6,
+            width: 26, height: 26, borderRadius: 999, padding: 0,
+            background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
+            border: '1px solid rgba(255,255,255,0.18)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+            <path d="M6 6l12 12M6 18L18 6" stroke="#FF7A99" strokeWidth="2.6" strokeLinecap="round"/>
           </svg>
         </button>
       </div>

@@ -1,73 +1,47 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase, hasSupabase } from '@/lib/supabase';
+import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { verifyEmail } from '@/lib/auth';
+import { useProfile } from '@/contexts/ProfileContext';
+import { consumePendingJoin } from '@/lib/pendingJoin';
 
-/**
- * Dedicated OAuth landing route. Mobile browsers (iOS Safari especially) are
- * flaky about Supabase's automatic session detection when the redirect lands
- * anywhere that also renders the app shell. Having a minimal page that does
- * ONE thing — wait for the session, then navigate — fixes the "stuck on black
- * screen / Invitado profile" bug.
- *
- * With `detectSessionInUrl: true` and `flowType: 'pkce'` on the supabase
- * client, Supabase auto-exchanges the `?code=` param itself. We just wait
- * for the session to become available and then move the user to /home.
- */
 const AuthCallback = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { setProfileFields } = useProfile();
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(false);
+  const calledRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
-    let settled = false;
+    if (calledRef.current) return;
 
-    function go(path) {
-      if (cancelled || settled) return;
-      settled = true;
-      navigate(path, { replace: true });
-    }
+    const token = searchParams.get('token');
+    const email = searchParams.get('email');
 
-    if (!hasSupabase) {
-      go('/home');
+    if (!token || !email) {
+      navigate('/home', { replace: true });
       return;
     }
 
-    // 1) Listen for the auth event — most reliable.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) go('/home');
-      else if (event === 'INITIAL_SESSION') {
-        // INITIAL_SESSION fires once after URL detection. If still no session,
-        // fall back to checking manually below.
-      }
-    });
+    calledRef.current = true;
 
-    // 2) Also poll getSession for a few seconds as a safety net.
     (async () => {
-      for (let i = 0; i < 20 && !cancelled && !settled; i++) {
-        const { data } = await supabase.auth.getSession();
-        if (data?.session) { go('/home'); return; }
-        await new Promise(r => setTimeout(r, 250));
-      }
-      // 3) Last resort: try manual PKCE exchange.
-      if (!cancelled && !settled) {
-        try {
-          const url = window.location.href;
-          if (window.location.search.includes('code=')) {
-            const { data, error } = await supabase.auth.exchangeCodeForSession(url);
-            if (error) throw error;
-            if (data?.session) { go('/home'); return; }
-          }
-        } catch (e) {
-          console.error('[AuthCallback] exchange failed', e);
-          if (!cancelled) setError(e.message || 'No se pudo iniciar sesión.');
-          return;
+      try {
+        const result = await verifyEmail(email, token);
+        if (result?.profile) {
+          setSuccess(true);
+          setProfileFields(result.profile);
+          const code = consumePendingJoin();
+          const dest = code ? `/g/${code}` : '/home';
+          setTimeout(() => navigate(dest, { replace: true }), 1500);
+        } else {
+          setError('No se pudo verificar el email. Intentalo de nuevo.');
         }
-        if (!cancelled) setError('No se pudo iniciar sesión. Inténtalo de nuevo.');
+      } catch (e) {
+        setError(e.message || 'Enlace invalido o expirado.');
       }
     })();
-
-    return () => { cancelled = true; subscription.unsubscribe(); };
-  }, [navigate]);
+  }, [navigate, searchParams, setProfileFields]);
 
   return (
     <div style={{
@@ -81,22 +55,22 @@ const AuthCallback = () => {
         style={{
           width: 56, height: 56, objectFit: 'cover', objectPosition: 'center top',
           transform: 'scale(1.55) translateY(-14%)', transformOrigin: 'center top',
-          animation: 'fp-pulse 1.4s ease-in-out infinite',
+          animation: success ? 'none' : 'fp-pulse 1.4s ease-in-out infinite',
         }}
       />
-      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', fontFamily: '"Space Grotesk"' }}>
-        {error ? error : 'Iniciando sesión…'}
+      <div style={{ fontSize: 14, color: success ? '#4EFFD6' : error ? '#FFB0C2' : 'rgba(255,255,255,0.5)', fontFamily: '"Space Grotesk"', fontWeight: 600 }}>
+        {success ? 'Email verificado! Entrando...' : error ? error : 'Verificando email...'}
       </div>
       {error && (
         <button
-          onClick={() => navigate('/welcome', { replace: true })}
+          onClick={() => navigate('/signin', { replace: true })}
           style={{
             marginTop: 12, padding: '10px 22px', borderRadius: 999,
             background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)',
             color: '#fff', fontFamily: '"Space Grotesk"', cursor: 'pointer',
           }}
         >
-          Volver
+          Ir a iniciar sesion
         </button>
       )}
     </div>

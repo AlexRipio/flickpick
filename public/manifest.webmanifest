@@ -1,0 +1,37 @@
+{
+	"name": "FlickPick — Match de cine en pareja",
+	"short_name": "FlickPick",
+	"description": "Swipe, match y a ver. La app para elegir película en pareja sin discutir.",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"display_override": ["standalone", "minimal-ui"],
+	"orientation": "portrait",
+	"background_color": "#0a0a0a",
+	"theme_color": "#0a0a0a",
+	"lang": "es",
+	"dir": "ltr",
+	"categories": ["entertainment", "lifestyle", "social"],
+	"icons": [
+		{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+		{ "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+		{ "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+		{ "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+	],
+	"shortcuts": [
+		{
+			"name": "Crear sala",
+			"short_name": "Crear",
+			"description": "Empieza una sala nueva con tu pareja o amigos",
+			"url": "/create",
+			"icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+		},
+		{
+			"name": "Tendencias",
+			"short_name": "Tendencias",
+			"description": "Top 10 y estrenos en tus plataformas",
+			"url": "/trending",
+			"icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+		}
+	]
+}

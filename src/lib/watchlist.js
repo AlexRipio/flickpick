@@ -5,6 +5,8 @@
  * "Vistas"      → KEY_WATCHED
  */
 
+import { userSync } from '@/lib/userSync';
+
 const KEY_WANT    = 'flickpick.watchlist.v1';
 const KEY_WATCHED = 'flickpick.watched.v1';
 
@@ -18,11 +20,23 @@ function readKey(key) {
 function writeKey(key, list, listeners) {
   localStorage.setItem(key, JSON.stringify(list));
   listeners.forEach(fn => { try { fn(); } catch {} });
+  // Cross-device sync — debounced PATCH /api/user/settings
+  if (key === KEY_WANT)         userSync.watchlist(list);
+  else if (key === KEY_WATCHED) userSync.watched(list);
 }
 
 // ── "Quiero ver" API ──────────────────────────────────────────────────────────
 export function getWatchlist()           { return readKey(KEY_WANT); }
 export function isInWatchlist(movieId)   { return readKey(KEY_WANT).some(m => m.id === movieId); }
+
+/** Idempotent — returns true if added, false if already there. */
+export function addToWatchlist(movie) {
+  const list = readKey(KEY_WANT);
+  if (list.some(m => m.id === movie.id)) return false;
+  list.unshift({ ...movie, savedAt: Date.now() });
+  writeKey(KEY_WANT, list, wantListeners);
+  return true;
+}
 
 /** Returns true if movie was ADDED, false if removed. */
 export function toggleWatchlist(movie) {
@@ -46,8 +60,14 @@ export function removeFromWatchlist(movieId) {
 export function subscribeWatchlist(fn) {
   wantListeners.add(fn);
   const onStorage = (e) => { if (e.key === KEY_WANT) fn(); };
+  const onSync = () => fn();
   window.addEventListener('storage', onStorage);
-  return () => { wantListeners.delete(fn); window.removeEventListener('storage', onStorage); };
+  window.addEventListener('flickpick:settings-refreshed', onSync);
+  return () => {
+    wantListeners.delete(fn);
+    window.removeEventListener('storage', onStorage);
+    window.removeEventListener('flickpick:settings-refreshed', onSync);
+  };
 }
 
 // ── "Vistas" API ──────────────────────────────────────────────────────────────
@@ -87,6 +107,12 @@ export function removeWatched(movieId) {
 export function subscribeWatched(fn) {
   watchedListeners.add(fn);
   const onStorage = (e) => { if (e.key === KEY_WATCHED) fn(); };
+  const onSync = () => fn();
   window.addEventListener('storage', onStorage);
-  return () => { watchedListeners.delete(fn); window.removeEventListener('storage', onStorage); };
+  window.addEventListener('flickpick:settings-refreshed', onSync);
+  return () => {
+    watchedListeners.delete(fn);
+    window.removeEventListener('storage', onStorage);
+    window.removeEventListener('flickpick:settings-refreshed', onSync);
+  };
 }

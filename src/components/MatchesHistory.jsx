@@ -27,7 +27,15 @@ const MatchesHistory = () => {
     const mine = [];
     for (const r of Object.values(all)) {
       if (!r) continue;
-      if (profile?.id && r.members?.some(m => m.id === profile.id)) mine.push(r);
+      if (!profile?.id) continue;
+      // Include rooms where the user is a member OR the owner —
+      // mirrors the server-side filter in /api/rooms/mine. Some rooms
+      // may have been created before the user logged in (members has
+      // a guest id) but ownerId matches; OR vice versa with members
+      // pointing to the canonical user.id.
+      const isMember = r.members?.some(m => m.id === profile.id);
+      const isOwner  = r.ownerId === profile.id;
+      if (isMember || isOwner) mine.push(r);
     }
     return mine.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [tick, profile]);
@@ -55,7 +63,7 @@ const MatchesHistory = () => {
         padding: '6px 24px 48px', maxWidth: 520, width: '100%', margin: '0 auto',
       }}>
         <h1 style={{
-          fontFamily: '"Syne", "Space Grotesk", sans-serif',
+          fontFamily: '"Inter", "Space Grotesk", sans-serif',
           fontSize: 30, fontWeight: 800, color: FP.text, margin: '0 0 4px', letterSpacing: -0.8,
         }}>Tus matches</h1>
         <p style={{ fontSize: 14, color: FP.textDim, margin: '0 0 22px' }}>
@@ -119,7 +127,7 @@ function RoomCard({ room, onOpen, onResume }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
         }}>
           <div style={{
-            fontFamily: '"Syne", sans-serif', fontSize: matchCount > 9 ? 18 : 22,
+            fontFamily: '"Inter", sans-serif', fontSize: matchCount > 9 ? 18 : 22,
             fontWeight: 800, color: matchCount > 0 ? '#4EFFD6' : FP.textMuted, lineHeight: 1,
           }}>{matchCount}</div>
           <div style={{ fontSize: 9, fontWeight: 700, color: FP.textMuted, textTransform: 'uppercase', letterSpacing: 0.4 }}>
@@ -130,13 +138,18 @@ function RoomCard({ room, onOpen, onResume }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontFamily: '"Space Grotesk", system-ui', fontSize: 16, fontWeight: 700, color: FP.text }}>
-              Sala · {room.joinCode}
+              {room.name || `Sala · ${room.joinCode}`}
             </span>
             <span style={{
               padding: '2px 8px', borderRadius: 999, background: 'rgba(255,255,255,0.06)',
               fontSize: 10, fontWeight: 700, color: statusColor,
             }}>{statusLabel}</span>
           </div>
+          {room.name && (
+            <div style={{ fontSize: 11, color: FP.textMuted, marginTop: 2, fontFamily: 'ui-monospace, Menlo, monospace' }}>
+              #{room.joinCode}
+            </div>
+          )}
 
           {createdStr && (
             <div style={{ fontSize: 11, color: FP.textMuted, marginTop: 4 }}>📅 {createdStr}</div>

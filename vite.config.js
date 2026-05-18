@@ -4,6 +4,7 @@ import { createLogger, defineConfig } from 'vite';
 import inlineEditPlugin from './plugins/visual-editor/vite-plugin-react-inline-editor.js';
 import editModeDevPlugin from './plugins/visual-editor/vite-plugin-edit-mode.js';
 import iframeRouteRestorationPlugin from './plugins/vite-plugin-iframe-route-restoration.js';
+import { VitePWA } from 'vite-plugin-pwa';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -206,7 +207,59 @@ export default defineConfig({
 	plugins: [
 		...(isDev ? [inlineEditPlugin(), editModeDevPlugin(), iframeRouteRestorationPlugin()] : []),
 		react(),
-		addTransformIndexHtml
+		addTransformIndexHtml,
+		VitePWA({
+			registerType: 'autoUpdate',
+			injectRegister: 'auto',
+			strategies: 'generateSW',
+			manifest: false,
+			includeAssets: [
+				'Favicon.webp',
+				'flickpick-mark.webp',
+				'imagotipo.webp',
+				'logo.png',
+				'icons/*.png',
+			],
+			workbox: {
+				globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2}'],
+				navigateFallback: '/index.html',
+				navigateFallbackDenylist: [/^\/api\//, /^\/ws/, /\.well-known/],
+				cleanupOutdatedCaches: true,
+				skipWaiting: true,
+				clientsClaim: true,
+				maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+				// Inject our push notification handler into the generated SW.
+				// File lives in public/push-handler.js so it's served as-is.
+				importScripts: ['/push-handler.js'],
+				runtimeCaching: [
+					{
+						urlPattern: /^https:\/\/image\.tmdb\.org\//,
+						handler: 'CacheFirst',
+						options: {
+							cacheName: 'tmdb-images',
+							expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 30 },
+							cacheableResponse: { statuses: [0, 200] },
+						},
+					},
+					{
+						urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\//,
+						handler: 'StaleWhileRevalidate',
+						options: {
+							cacheName: 'google-fonts',
+							expiration: { maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365 },
+							cacheableResponse: { statuses: [0, 200] },
+						},
+					},
+					{
+						urlPattern: ({ url }) => url.origin === self.location.origin && url.pathname.startsWith('/api/'),
+						handler: 'NetworkOnly',
+					},
+				],
+			},
+			devOptions: {
+				enabled: false,
+			},
+		}),
 	],
 	server: {
 		cors: true,

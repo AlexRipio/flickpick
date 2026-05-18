@@ -1,0 +1,28 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /auth/callback
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+Sitemap: https://flickpick.mov/sitemap.xml
+Host: https://flickpick.mov

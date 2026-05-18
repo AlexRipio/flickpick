@@ -1,33 +1,42 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AmbientBackdrop, BackButton, GradientButton, TextField } from '@/components/fp/primitives';
 import { FP } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
 import { findRoomByCode, addMember, hydrateRoomByCode } from '@/lib/roomStore';
-import { signInWithGoogle, hasSupabase } from '@/lib/auth';
+import { setPendingJoin, clearPendingJoin } from '@/lib/pendingJoin';
 
 const CODE_LEN = 5;
-const KEYS = ['Q','W','E','R','T','Y','U','I','O','P','A','S','D','F','G','H','J','K','L','Z','X','C','V','B','N','M','2','3','4','5','6','7','8','9'];
 
 const JoinScreen = () => {
   const { joinCode } = useParams();
   const navigate = useNavigate();
-  const { profile, setName } = useProfile();
+  const { profile, setName, authLoading } = useProfile();
 
   const [code, setCode] = useState('');
   const [draftName, setDraftName] = useState('');
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Step: 'auto' | 'choose' | 'name' | 'code'
-  const [step, setStep] = useState(() => {
+  // Step: 'auto' | 'choose' | 'name' | 'code' | 'loading'
+  const [step, setStep] = useState('loading');
+
+  // Re-evaluate step whenever profile/authLoading changes. This is critical
+  // because ProfileContext loads asynchronously: at first render `profile`
+  // can be null and after the JWT validates, `profile` populates. Without
+  // this effect a logged-in user arriving via link would get stuck on the
+  // 'choose' screen.
+  useEffect(() => {
+    if (authLoading) { setStep('loading'); return; }
     if (joinCode) {
-      // Arriving via invite link
-      if (profile?.name) return 'auto';   // already has session → skip straight to join
-      return 'choose';                     // no session → show choice screen
+      // Persist the pending join code so the auth flow can return here.
+      setPendingJoin(joinCode);
+      if (profile?.name) setStep('auto');
+      else setStep('choose');
+    } else {
+      setStep(profile?.name ? 'code' : 'name');
     }
-    return profile?.name ? 'code' : 'name';
-  });
+  }, [authLoading, profile?.name, joinCode]);
 
   useEffect(() => {
     if (joinCode) setCode(joinCode.toUpperCase().slice(0, CODE_LEN));
@@ -41,19 +50,32 @@ const JoinScreen = () => {
   }, [step]);
 
   const filled = code.padEnd(CODE_LEN, ' ').split('');
-  const tap = (c) => { if (code.length < CODE_LEN && /[A-Z0-9]/.test(c)) setCode(code + c); };
-  const del = () => setCode(code.slice(0, -1));
   const canJoin = code.length === CODE_LEN;
+  const codeInputRef = useRef(null);
+  const focusCodeInput = () => {
+    const el = codeInputRef.current;
+    if (!el) return;
+    el.focus();
+    // iOS sometimes ignores the first focus until the user taps; calling
+    // .click() right after primes the native keyboard.
+    try { el.click(); } catch {}
+  };
 
   async function doJoinWithProfile(me) {
     setErr('');
     setLoading(true);
-    const codeToUse = code || (joinCode?.toUpperCase().slice(0, CODE_LEN));
+    const rawCode = code || (joinCode || '');
+    const codeToUse = String(rawCode).toUpperCase().trim().slice(0, CODE_LEN);
+    if (!codeToUse || codeToUse.length !== CODE_LEN) {
+      setErr('Código inválido.'); setLoading(false); return;
+    }
     let room = findRoomByCode(codeToUse);
     if (!room) room = await hydrateRoomByCode(codeToUse);
     if (!room) { setErr('Sala no encontrada.'); setLoading(false); return; }
     try {
-      addMember(room.id, { id: me.id, name: me.name, avatarUrl: me.avatarUrl || null });
+      await addMember(room.id, { id: me.id, name: me.name, avatarUrl: me.avatarUrl || null });
+      // Clear any pending-join intent now that we made it in.
+      clearPendingJoin();
       navigate(`/room/${room.id}/lobby`, { replace: true });
     } catch (e) {
       setErr(e.message || 'No se pudo entrar.');
@@ -68,23 +90,23 @@ const JoinScreen = () => {
     await doJoinWithProfile(me);
   };
 
-  const handleGoogle = async () => {
-    setLoading(true);
-    try {
-      const result = await signInWithGoogle();
-      if (result.redirecting) {
-        // Google OAuth will redirect back; session handled by ProfileContext
-        return;
-      }
-      if (result.profile) {
-        const me = result.profile;
-        await doJoinWithProfile(me);
-      }
-    } catch (e) {
-      setErr(e.message);
-      setLoading(false);
-    }
+  const handleGoogle = () => {
+    // Persist the pending joinCode so SignInScreen can pick it up after auth.
+    if (joinCode) setPendingJoin(joinCode);
+    navigate('/signin');
   };
+
+  // ── STEP: loading auth state ─────────────────────────────────
+  if (step === 'loading') {
+    return (
+      <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <AmbientBackdrop hue={320}/>
+        <div style={{ position: 'relative', zIndex: 2, color: FP.textDim, fontSize: 14 }}>
+          Cargando…
+        </div>
+      </div>
+    );
+  }
 
   // ── STEP: auto-joining ───────────────────────────────────────
   if (step === 'auto') {
@@ -94,6 +116,7 @@ const JoinScreen = () => {
         <div style={{ position: 'relative', zIndex: 2, color: FP.textDim, fontSize: 15 }}>
           Entrando a la sala…
         </div>
+        {err && <div style={{ position: 'relative', zIndex: 2, marginTop: 12, color: '#FF3B6B', fontSize: 13 }}>{err}</div>}
       </div>
     );
   }
@@ -106,16 +129,18 @@ const JoinScreen = () => {
         <div style={{ position: 'relative', zIndex: 2, padding: '16px 20px', maxWidth: 520, width: '100%', margin: '0 auto' }}>
           <BackButton onClick={() => navigate('/')}/>
         </div>
-        <div style={{
+        <div className="no-scrollbar" style={{
           position: 'relative', zIndex: 2, flex: 1,
-          padding: '20px 24px 36px', display: 'flex', flexDirection: 'column',
+          padding: '20px 24px 48px', display: 'flex', flexDirection: 'column',
           maxWidth: 520, width: '100%', margin: '0 auto',
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
         }}>
           <div style={{ fontSize: 11, color: FP.cyan, letterSpacing: 3, textTransform: 'uppercase', marginBottom: 12, fontWeight: 700 }}>
             Te han invitado
           </div>
           <h1 style={{
-            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontFamily: '"Inter", "Space Grotesk", sans-serif',
             fontSize: 34, fontWeight: 800, color: FP.text,
             margin: '0 0 8px', letterSpacing: -1, lineHeight: 1.1,
           }}>¿Cómo quieres entrar?</h1>
@@ -217,7 +242,7 @@ const JoinScreen = () => {
           <BackButton onClick={() => navigate('/home')}/>
         </div>
         <div style={{ position: 'relative', zIndex: 2, flex: 1, padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 520, width: '100%', margin: '0 auto' }}>
-          <h1 style={{ fontFamily: '"Syne", "Space Grotesk", sans-serif', fontSize: 30, fontWeight: 800, color: FP.text, margin: 0, letterSpacing: -0.8 }}>¿Cómo te llamas?</h1>
+          <h1 style={{ fontFamily: '"Inter", "Space Grotesk", sans-serif', fontSize: 30, fontWeight: 800, color: FP.text, margin: 0, letterSpacing: -0.8 }}>¿Cómo te llamas?</h1>
           <p style={{ fontSize: 14, color: FP.textDim, margin: 0 }}>Tus compañeros te verán con este nombre.</p>
           <TextField label="Nombre" value={draftName} onChange={setDraftName} placeholder="Tu nombre" autoFocus/>
           <div style={{ flex: 1 }}/>
@@ -236,58 +261,98 @@ const JoinScreen = () => {
       <div style={{ position: 'relative', zIndex: 2, padding: '16px 20px', maxWidth: 520, width: '100%', margin: '0 auto' }}>
         <BackButton onClick={() => navigate('/home')}/>
       </div>
-      <div style={{ position: 'relative', zIndex: 2, padding: '20px 24px', flex: 1, display: 'flex', flexDirection: 'column', maxWidth: 520, width: '100%', margin: '0 auto' }}>
+      <div style={{
+        position: 'relative', zIndex: 2,
+        padding: '8px 24px calc(env(safe-area-inset-bottom, 0px) + 24px)',
+        display: 'flex', flexDirection: 'column',
+        maxWidth: 520, width: '100%', margin: '0 auto',
+      }}>
         <h1 style={{
-          fontFamily: '"Syne", "Space Grotesk", sans-serif',
+          fontFamily: '"Inter", "Space Grotesk", sans-serif',
           fontSize: 32, fontWeight: 800, color: FP.text,
           margin: 0, letterSpacing: -0.8,
         }}>Únete a una sala</h1>
-        <p style={{ fontSize: 15, color: FP.textDim, margin: '8px 0 32px' }}>
-          Introduce el código que te compartieron.
+        <p style={{ fontSize: 15, color: FP.textDim, margin: '8px 0 28px' }}>
+          Toca los huecos e introduce el código.
         </p>
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 20 }}>
+        {/* Native input — visually hidden but focusable. Triggers the
+            device keyboard on tap. inputMode=text + autoCapitalize lets
+            users type both letters and digits comfortably on mobile. */}
+        <input
+          ref={codeInputRef}
+          type="text"
+          value={code}
+          onChange={(e) => {
+            const v = (e.target.value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LEN);
+            setCode(v);
+          }}
+          inputMode="text"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          autoComplete="one-time-code"
+          spellCheck={false}
+          maxLength={CODE_LEN}
+          autoFocus
+          aria-label="Código de la sala"
+          style={{
+            position: 'absolute',
+            // Off-screen but in the layout — focus + native keyboard work.
+            // (display:none / visibility:hidden would block focus on iOS.)
+            opacity: 0,
+            pointerEvents: 'none',
+            width: 1, height: 1, border: 0, padding: 0, margin: 0,
+            // Keep the caret near the visual code so the keyboard's
+            // candidate strip appears in a sensible spot.
+            top: 280, left: '50%',
+          }}
+        />
+
+        {/* Visual code display — tap any cell to open the native keyboard. */}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={focusCodeInput}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') focusCodeInput(); }}
+          style={{
+            display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 16,
+            cursor: 'text',
+          }}
+        >
           {filled.map((c, i) => (
             <div key={i} style={{
-              width: 48, height: 60, borderRadius: 14,
+              width: 52, height: 64, borderRadius: 14,
               background: c.trim() ? FP.flame : 'rgba(255,255,255,0.04)',
-              border: c.trim() ? 'none' : `1px solid ${i === code.length ? '#FF3B6B' : 'rgba(255,255,255,0.1)'}`,
+              border: c.trim() ? 'none' : `1.5px solid ${i === code.length ? '#FF3B6B' : 'rgba(255,255,255,0.12)'}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontFamily: '"Space Grotesk", monospace',
-              fontSize: 26, fontWeight: 800, color: '#fff',
+              fontSize: 28, fontWeight: 800, color: '#fff',
               boxShadow: c.trim() ? '0 6px 18px rgba(255,59,107,0.3)' : 'none',
+              transition: 'transform 0.18s, box-shadow 0.18s',
+              transform: i === code.length ? 'scale(1.04)' : 'scale(1)',
             }}>{c.trim() || ''}</div>
           ))}
         </div>
-        {err && <div style={{ color: '#FF3B6B', fontSize: 13, textAlign: 'center', marginBottom: 8, fontWeight: 600 }}>{err}</div>}
 
-        <div style={{ flex: 1 }}/>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
+          <button
+            type="button"
+            onClick={() => { setCode(''); focusCodeInput(); }}
+            disabled={!code}
+            style={{
+              padding: '8px 16px', borderRadius: 999,
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: code ? FP.textDim : 'rgba(255,255,255,0.25)',
+              fontSize: 12, fontWeight: 600,
+              fontFamily: '"Space Grotesk", system-ui',
+              cursor: code ? 'pointer' : 'not-allowed',
+            }}
+          >Limpiar</button>
+        </div>
 
-        <div className="no-scrollbar" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 10 }}>
-          {KEYS.map(c => (
-            <button key={c} onClick={() => tap(c)} style={{
-              height: 44, borderRadius: 12,
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: FP.text, fontSize: 15, fontWeight: 700, cursor: 'pointer',
-              fontFamily: '"Space Grotesk", monospace', padding: 0,
-            }}>{c}</button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-          <button onClick={del} style={{
-            flex: 1, height: 44, borderRadius: 12,
-            background: 'rgba(255,255,255,0.06)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            color: FP.textDim, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-          }}>⌫ Borrar</button>
-          <button onClick={() => setCode('')} style={{
-            flex: 1, height: 44, borderRadius: 12,
-            background: 'rgba(255,255,255,0.06)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            color: FP.textDim, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-          }}>Limpiar</button>
-        </div>
+        {err && <div style={{ color: '#FF3B6B', fontSize: 13, textAlign: 'center', marginBottom: 12, fontWeight: 600 }}>{err}</div>}
+
         <GradientButton variant="flame" disabled={!canJoin || loading} onClick={doJoin}>
           {loading ? 'Entrando…' : 'Entrar a la sala'}
         </GradientButton>

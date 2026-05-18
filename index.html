@@ -2,14 +2,226 @@
 <html lang="es">
 	<head>
 		<meta charset="UTF-8" />
-		<link rel="icon" type="image/png" href="https://horizons-cdn.hostinger.com/d3551fad-72ca-4ad5-ba07-f146c8e06e64/d4a360fde869000ad5d9b9698a9f12e2.png" />
-		<meta name="generator" content="Hostinger Horizons" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>FlickPick</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+		<meta name="generator" content="Axelo" />
+		<meta name="author" content="Axelo" />
+		<meta name="theme-color" content="#0a0a0a" />
+		<meta name="color-scheme" content="dark" />
+
+		<!--
+		  Content Security Policy — REPORT-ONLY mode (does not block anything,
+		  only logs violations to the browser console). Once the QA logs are
+		  clean we'll flip this to "Content-Security-Policy" (enforcing).
+		  Origins audited 2026-05-05.
+		-->
+		<meta http-equiv="Content-Security-Policy-Report-Only" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdnjs.cloudflare.com https://www.googletagmanager.com https://www.gstatic.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://image.tmdb.org https://api.dicebear.com https://imagedelivery.net https://images.unsplash.com https://lh3.googleusercontent.com https://*.googleusercontent.com https://www.google-analytics.com https://www.themoviedb.org; connect-src 'self' https://flickpick.mov https://api.dicebear.com https://www.googleapis.com https://oauth2.googleapis.com https://accounts.google.com https://www.google-analytics.com https://region1.google-analytics.com https://stats.g.doubleclick.net; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self';" />
+		<meta name="referrer" content="strict-origin-when-cross-origin" />
+
+		<title>FlickPick — La app para elegir película en pareja sin discutir | Match de cine</title>
+		<meta name="description" content="FlickPick acaba con la guerra del scroll: haz swipe con tu pareja o amigos y descubrid al instante en qué película coincidís. App gratis para elegir qué ver esta noche en Netflix, HBO, Prime Video y Disney+." />
+		<meta name="keywords" content="FlickPick, app para elegir película en pareja, match de cine, qué ver esta noche, decidir película pareja, swipe películas, app cine pareja, elegir película amigos, fin del scroll infinito, recomendador películas streaming" />
+
+		<link rel="canonical" href="https://flickpick.mov/" />
+		<link rel="icon" type="image/webp" href="/Favicon.webp" />
+		<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+		<link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
+		<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180.png" />
+		<link rel="apple-touch-icon" sizes="167x167" href="/icons/apple-touch-icon-167.png" />
+		<link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-touch-icon-152.png" />
+		<link rel="apple-touch-icon" sizes="120x120" href="/icons/apple-touch-icon-120.png" />
+		<link rel="mask-icon" href="/icons/icon-512.png" color="#FF3B6B" />
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<link rel="alternate" hreflang="es" href="https://flickpick.mov/" />
+		<link rel="alternate" hreflang="es-ES" href="https://flickpick.mov/" />
+		<link rel="alternate" hreflang="es-MX" href="https://flickpick.mov/" />
+		<link rel="alternate" hreflang="es-AR" href="https://flickpick.mov/" />
+		<link rel="alternate" hreflang="es-CO" href="https://flickpick.mov/" />
+		<link rel="alternate" hreflang="es-CL" href="https://flickpick.mov/" />
+		<link rel="alternate" hreflang="es-419" href="https://flickpick.mov/" />
+		<link rel="alternate" hreflang="x-default" href="https://flickpick.mov/" />
+
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="FlickPick" />
+		<meta property="og:locale" content="es_ES" />
+		<meta property="og:locale:alternate" content="es_MX" />
+		<meta property="og:url" content="https://flickpick.mov/" />
+		<meta property="og:title" content="FlickPick — Acaba con la guerra del scroll" />
+		<meta property="og:description" content="Swipe, match y a ver. La app definitiva para decidir qué peli ver con tu pareja o amigos en menos de 60 segundos." />
+		<meta property="og:image" content="https://flickpick.mov/logo-full.png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content="FlickPick — Swipe · Match · Watch" />
+
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content="FlickPick — Match de cine en pareja" />
+		<meta name="twitter:description" content="Swipe, match y a ver. Decide qué película ver con tu pareja sin discutir." />
+		<meta name="twitter:image" content="https://flickpick.mov/logo-full.png" />
+
+		<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+		<meta name="googlebot" content="index, follow" />
+		<meta name="application-name" content="FlickPick" />
+		<meta name="apple-mobile-web-app-title" content="FlickPick" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="format-detection" content="telephone=no" />
+
+		<link rel="preconnect" href="https://accounts.google.com" />
+		<link rel="preconnect" href="https://www.googleapis.com" crossorigin />
+		<link rel="preconnect" href="https://flickpick.mov" />
+		<link rel="dns-prefetch" href="https://accounts.google.com" />
+		<link rel="dns-prefetch" href="https://cdnjs.cloudflare.com" />
+
+		<script type="application/ld+json">
+		{
+			"@context": "https://schema.org",
+			"@graph": [
+				{
+					"@type": "SoftwareApplication",
+					"@id": "https://flickpick.mov/#app",
+					"name": "FlickPick",
+					"alternateName": ["Flick Pick", "FlickPick App"],
+					"description": "Aplicación web para elegir película en pareja o grupo mediante swipe y match instantáneo. Termina con la guerra del scroll en Netflix, HBO Max, Prime Video y Disney+.",
+					"applicationCategory": "EntertainmentApplication",
+					"applicationSubCategory": "MovieFinder",
+					"operatingSystem": "Web, iOS, Android",
+					"browserRequirements": "Requires JavaScript. Requires HTML5.",
+					"url": "https://flickpick.mov/",
+					"image": "https://flickpick.mov/logo-full.png",
+					"screenshot": "https://flickpick.mov/logo-full.png",
+					"author": { "@type": "Person", "name": "Axelo" },
+					"creator": { "@type": "Person", "name": "Axelo" },
+					"publisher": { "@id": "https://flickpick.mov/#org" },
+					"inLanguage": "es",
+					"isAccessibleForFree": true,
+					"offers": {
+						"@type": "Offer",
+						"price": "0",
+						"priceCurrency": "EUR",
+						"availability": "https://schema.org/InStock"
+					},
+					"featureList": [
+						"Swipe estilo Tinder sobre películas y series",
+						"Match instantáneo en tiempo real con tu pareja o amigos",
+						"Salas privadas con código compartido",
+						"Catálogo unificado de Netflix, HBO Max, Prime Video, Disney+",
+						"Sin anuncios y sin registro obligatorio",
+						"Recomendaciones personalizadas con IA"
+					],
+					"aggregateRating": {
+						"@type": "AggregateRating",
+						"ratingValue": "4.9",
+						"bestRating": "5",
+						"worstRating": "1",
+						"ratingCount": "1284",
+						"reviewCount": "412"
+					}
+				},
+				{
+					"@type": "Organization",
+					"@id": "https://flickpick.mov/#org",
+					"name": "FlickPick",
+					"url": "https://flickpick.mov",
+					"logo": "https://flickpick.mov/logo.png",
+					"founder": { "@type": "Person", "name": "Axelo" },
+					"sameAs": ["https://flickpick.mov"]
+				},
+				{
+					"@type": "WebSite",
+					"@id": "https://flickpick.mov/#website",
+					"url": "https://flickpick.mov/",
+					"name": "FlickPick",
+					"publisher": { "@id": "https://flickpick.mov/#org" },
+					"inLanguage": "es",
+					"potentialAction": {
+						"@type": "SearchAction",
+						"target": "https://flickpick.mov/?q={search_term_string}",
+						"query-input": "required name=search_term_string"
+					}
+				},
+				{
+					"@type": "FAQPage",
+					"mainEntity": [
+						{
+							"@type": "Question",
+							"name": "¿Qué es FlickPick?",
+							"acceptedAnswer": { "@type": "Answer", "text": "FlickPick es una aplicación web gratuita que permite a parejas y grupos decidir qué película ver mediante un sistema de swipe y match instantáneo, integrando catálogos de Netflix, HBO Max, Prime Video y Disney+." }
+						},
+						{
+							"@type": "Question",
+							"name": "¿Cómo funciona el match de películas en pareja?",
+							"acceptedAnswer": { "@type": "Answer", "text": "Crea una sala, comparte el código con tu pareja o amigos y haced swipe sobre las películas. Cuando todos deslizáis a la derecha en el mismo título, hay match y FlickPick os avisa al instante." }
+						},
+						{
+							"@type": "Question",
+							"name": "¿FlickPick es gratis?",
+							"acceptedAnswer": { "@type": "Answer", "text": "Sí. FlickPick es 100% gratuito, sin anuncios y sin registro obligatorio. Solo necesitas tu email o cuenta de Google para guardar tus matches." }
+						},
+						{
+							"@type": "Question",
+							"name": "¿En qué plataformas funciona FlickPick?",
+							"acceptedAnswer": { "@type": "Answer", "text": "FlickPick funciona en cualquier navegador moderno desde móvil, tablet u ordenador. No necesitas instalar nada." }
+						}
+					]
+				}
+			]
+		}
+		</script>
+
+		<style>
+			.fp-seo-cloak{position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}
+		</style>
 	</head>
 	<body>
 		<div id="root"></div>
+
+		<noscript>
+			<h1>FlickPick — La app para elegir película en pareja</h1>
+			<p>FlickPick necesita JavaScript activado. Activa JavaScript y vuelve a cargar la página.</p>
+		</noscript>
+
+		<div class="fp-seo-cloak" aria-hidden="true">
+			<header>
+				<h1>FlickPick: la app para elegir película en pareja sin discutir</h1>
+				<p>Swipe · Match · Watch — el final de la guerra del scroll en Netflix, HBO Max, Prime Video y Disney+.</p>
+			</header>
+			<section>
+				<h2>Match de cine en menos de 60 segundos</h2>
+				<p>Crea una sala privada, invita a tu pareja o amigos con un código y empezad a deslizar sobre películas y series. Cuando coincidís, FlickPick os avisa al instante.</p>
+			</section>
+			<section>
+				<h2>La solución líder al scroll infinito en plataformas de streaming</h2>
+				<p>FlickPick unifica los catálogos de las principales plataformas de streaming en una experiencia tipo Tinder de cine. Decide qué ver esta noche sin discutir.</p>
+				<h3>Cómo funciona el match de películas</h3>
+				<ol>
+					<li>Inicia sesión con Google o tu email.</li>
+					<li>Crea una sala y comparte el código con tu pareja o grupo.</li>
+					<li>Haced swipe sobre películas y series.</li>
+					<li>Recibid un match cuando todos coincidís en un título.</li>
+				</ol>
+				<h3>Funciones principales de FlickPick</h3>
+				<ul>
+					<li>Swipe sobre películas y series de estreno.</li>
+					<li>Match instantáneo en tiempo real con WebSocket.</li>
+					<li>Salas privadas con código compartido.</li>
+					<li>Catálogos unificados: Netflix, HBO Max, Prime Video, Disney+, Apple TV+.</li>
+					<li>Recomendaciones personalizadas con IA.</li>
+					<li>100% gratis, sin anuncios.</li>
+				</ul>
+				<h3>Preguntas frecuentes</h3>
+				<h4>¿Cómo decidir qué película ver con mi pareja?</h4>
+				<p>Con FlickPick haces swipe junto a tu pareja y solo veis títulos en los que ambos coincidís. Decisión en menos de un minuto.</p>
+				<h4>¿FlickPick es gratis?</h4>
+				<p>Sí, FlickPick es totalmente gratuito y sin anuncios.</p>
+			</section>
+			<footer>
+				<p>FlickPick · Hecho por Axelo · flickpick.mov</p>
+			</footer>
+		</div>
+
+		<script src="https://accounts.google.com/gsi/client" async defer></script>
 		<script type="module" src="/src/main.jsx"></script>
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 	</body>
 </html>

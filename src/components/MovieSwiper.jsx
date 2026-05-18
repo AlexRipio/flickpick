@@ -7,14 +7,43 @@ import { useProfile } from '@/contexts/ProfileContext';
 import {
   addMember, getMemberVotedIds, getRoom, recordVote,
   closeRoom, subscribe, hydrateRoomById,
+  requestEndRoom, clearEndRequest,
+  markWatchedShared, getRoomWatchedIds,
 } from '@/lib/roomStore';
-import { fetchPoolForRoom, getSimilar, getMovieDetails, getMovieVideoKey, PROVIDER_WATCH_URLS } from '@/lib/tmdb';
+import { fetchPoolForRoom, getSimilar, getMovieDetails, getMovieVideoKey, posterUrl, PROVIDER_WATCH_URLS } from '@/lib/tmdb';
 import { blendTastes, rankPool, topGenres } from '@/lib/matchmaking';
+import { markWatched, getWatched, subscribeWatched } from '@/lib/watchlist';
 import DetailSheet from '@/components/DetailSheet';
+import { openShowtimes } from '@/lib/showtimes';
+import haptic from '@/lib/haptic';
 
 const RERANK_EVERY      = 5;
 const REFILL_THRESHOLD  = 6;
-const PAUSE_AT_SWIPES   = 25; // show mid-session pause every N swipes
+const DEFAULT_PAUSE_AT  = 25; // pausa por defecto cuando swipeTarget = null
+// pauseAt dinámico: si hay swipeTarget, mitad redondeada arriba (mín 5)
+function computePauseAt(swipeTarget) {
+  if (!swipeTarget) return DEFAULT_PAUSE_AT;
+  return Math.max(5, Math.ceil(swipeTarget / 2));
+}
+
+// Defensive de-duplication: TMDB occasionally serves the same movie
+// across multiple discover pages, and expandWithSimilar can yield
+// overlap with the existing pool. A duplicate in `pool`/`ranked`
+// surfaces as the same poster appearing twice in a row — the user
+// sees an identical card right after the previous one. Stripping
+// duplicates by id at the boundary keeps the swipe stack monotonic.
+function dedupeById(list) {
+  const seen = new Set();
+  const out  = [];
+  for (const m of list) {
+    if (m == null) continue;
+    const id = Number(m.id);
+    if (!Number.isFinite(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push(m);
+  }
+  return out;
+}
 
 const MovieSwiper = () => {
   const { id: roomId } = useParams();
@@ -30,16 +59,25 @@ const MovieSwiper = () => {
   const [matchMovie, setMatchMovie]     = useState(null);
   const [detailMovie, setDetailMovie]   = useState(null);
   const [showPause, setShowPause]       = useState(false);
+  const [endRequestSent, setEndRequestSent] = useState(false);
   const [swipeCount, setSwipeCount]     = useState(0); // drives progress bar re-renders
   const swipeCountRef                   = useRef(0);   // authoritative counter (no stale closure risk)
 
-  // drag
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  // drag — only `dragging` survives as state because it gates the
+  // grab/grabbing cursor; the offset itself is tracked in dragOffsetRef
+  // (declared further down) and applied to the DOM imperatively.
   const [dragging, setDragging]     = useState(false);
 
   // ── exit animation: the card flying off-screen lives here, separate from the stack
   // { movie, dir, startX, startY, startRot }
   const [flyingOut, setFlyingOut] = useState(null);
+  // Synchronous mirror of flyingOut. setState batching in React lets two
+  // back-to-back button taps (or a fast double-fire on Android) both clear
+  // the `if (flyingOut) return` guard inside swipe() before either render
+  // commits, which records the same card twice. This ref is set inline at
+  // the top of swipe()/markAsWatched() so the second call short-circuits
+  // immediately.
+  const flyingOutRef = useRef(null);
 
   const startRef        = useRef(null);
   const startTimeRef    = useRef(0);
@@ -56,6 +94,22 @@ const MovieSwiper = () => {
   const votedIds   = useMemo(() => me ? getMemberVotedIds(room, me.id) : new Set(), [room, me]);
   const lobbyTaste = useMemo(() => room ? blendTastes(room.members.map(m => m.taste)) : null, [room]);
 
+  // ── Watched IDs (locales del usuario + compartidas en sala) ────────────────
+  const [localWatchedTick, setLocalWatchedTick] = useState(0);
+  useEffect(() => {
+    const unsub = subscribeWatched(() => setLocalWatchedTick(t => t + 1));
+    return unsub;
+  }, []);
+  const excludedIds = useMemo(() => {
+    const set = new Set(votedIds);
+    // Si la sala marcó "incluir vistas", NO excluimos las watched (solo los votos)
+    if (!room?.preferences?.includeWatched) {
+      if (room) getRoomWatchedIds(room).forEach(id => set.add(id));
+      getWatched().forEach(m => set.add(Number(m.id)));
+    }
+    return set;
+  }, [votedIds, room, localWatchedTick]);
+
   // ── room subscription ─────────────────────────────────────────────────────
   useEffect(() => {
     const unsub    = subscribe(() => setRoom(getRoom(roomId)));
@@ -63,6 +117,19 @@ const MovieSwiper = () => {
     window.addEventListener('storage', onStorage);
     return () => { unsub?.(); window.removeEventListener('storage', onStorage); };
   }, [roomId]);
+
+  // ── react to room status (lobby / ended) — robust redirect ────────────────
+  // Si el host cierra la sala (status='ended') o vuelve a lobby, todos los
+  // miembros deben moverse aquí, no solo el host. La detección llega vía
+  // polling/WS → setRoom → este efecto.
+  useEffect(() => {
+    if (!room) return;
+    if (room.status === 'ended') {
+      navigate(`/room/${roomId}/analysis`, { replace: true });
+    } else if (room.status === 'lobby') {
+      navigate(`/room/${roomId}/lobby`, { replace: true });
+    }
+  }, [room?.status, roomId, navigate]);
 
   // ── detect new matches arriving via subscription (first voter) ────────────
   useEffect(() => {
@@ -83,6 +150,7 @@ const MovieSwiper = () => {
           // Show the overlay if this user had already liked this movie.
           const myVotes = room.votes?.[me.id] || {};
           if (myVotes[match.movieId] === 'like') {
+            haptic.match();
             setMatchMovie(match.movie);
           }
         }
@@ -112,15 +180,68 @@ const MovieSwiper = () => {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const { platforms = [], yearFrom, yearTo, mediaType = 'movie' } = room.preferences || {};
-      const includeCartelera = platforms.includes('cartelera');
-      const streamingKeys    = platforms.filter(p => p !== 'cartelera');
-      const movies = await fetchPoolForRoom({
-        platformKeys: streamingKeys, yearFrom, yearTo,
-        includeCartelera, pages: 3, excludeIds: votedIds, mediaType,
-      });
+      const { platforms = [], yearFrom, yearTo, mediaType = 'movie', vibes = [], cinema } = room.preferences || {};
+
+      let movies = [];
+
+      // Si hay cinema seleccionado, usar endpoint de cine específico
+      if (cinema && cinema.id) {
+        const apiBase = import.meta.env.VITE_API_URL || 'https://flickpick.mov/api';
+        const res = await fetch(`${apiBase}/cinemas/${cinema.id}/now`);
+        if (res.ok) {
+          const data = await res.json();
+          // Normaliza a shape TMDB. Filtra las que no tengan match TMDB
+          // (sin tmdbId no podemos mostrar póster ni metadata).
+          movies = (data.movies || [])
+            .filter(m => m.tmdbId)
+            .map(m => ({
+              id:           m.tmdbId,
+              title:        m.tmdbTitle || m.title,
+              original_title: m.originalTitle,
+              poster_path:  m.posterPath || null,
+              overview:     m.overview || m.synopsis || '',
+              release_date: m.releaseDate || '',
+              runtime:      m.runtime || null,
+              genre_ids:    [],
+              vote_average: 0,
+              cinemaShowtimes: m.showtimes || [],
+            }));
+        } else {
+          throw new Error('No pudimos cargar la cartelera del cine.');
+        }
+      } else {
+        // Flujo normal: fetchPoolForRoom
+        const includeCartelera = platforms.includes('cartelera');
+        const streamingKeys    = platforms.filter(p => p !== 'cartelera');
+
+        let genreIds = [];
+        let excludeGenreIds = [];
+        let keywordIds = [];
+        let movieMatchesVibes = null;
+        if (vibes.length) {
+          const v = await import('@/lib/vibes');
+          genreIds          = v.vibeCoreGenres(vibes);
+          excludeGenreIds   = v.vibeExcludeGenres(vibes);
+          keywordIds        = v.vibeKeywordIds(vibes);
+          movieMatchesVibes = v.movieMatchesVibes;
+        }
+
+        movies = await fetchPoolForRoom({
+          platformKeys: streamingKeys, yearFrom, yearTo,
+          includeCartelera, pages: 3, excludeIds: excludedIds, mediaType,
+          genreIds, excludeGenreIds, keywordIds,
+        });
+
+        // Defensa post-fetch (cartelera no admite with_genres en TMDB y algunas
+        // pelis vienen sin genre_ids). Aplica matcher estricto si hay vibes.
+        if (vibes.length && movieMatchesVibes) {
+          const strict = movies.filter(m => movieMatchesVibes(m, vibes));
+          if (strict.length >= 6) movies = strict;
+        }
+      }
+
       if (!movies.length) setLoadError('No encontramos pelis para estos filtros. Prueba con otras plataformas.');
-      setPool(movies);
+      setPool(dedupeById(movies));
     } catch (e) {
       setLoadError(e.message || 'No pudimos cargar las películas.');
     } finally {
@@ -138,9 +259,13 @@ const MovieSwiper = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (pool.length === 0) { setRanked([]); return; }
-    setRanked(rankPool(pool, lobbyTaste, votedIds));
+    // Filtramos previamente las películas ya vistas (sala + locales) para
+    // que no aparezcan, y deduplicamos por id como capa extra defensiva
+    // ante TMDB devolviendo el mismo id en varias páginas.
+    const filtered = dedupeById(pool.filter(m => !excludedIds.has(Number(m.id))));
+    setRanked(rankPool(filtered, lobbyTaste, votedIds));
     setIdx(0);
-  }, [pool]); // intentionally omitting lobbyTaste / votedIds
+  }, [pool, localWatchedTick]); // intentionally omitting lobbyTaste / votedIds
 
   const expandWithSimilar = useCallback(async () => {
     if (!me || me.taste.likes < 2) return;
@@ -158,7 +283,7 @@ const MovieSwiper = () => {
       for (const list of sets)
         for (const m of list)
           if (!seen.has(m.id) && !votedIds.has(m.id)) { seen.add(m.id); newMovies.push(m); }
-      if (newMovies.length) setPool(prev => [...prev, ...newMovies]);
+      if (newMovies.length) setPool(prev => dedupeById([...prev, ...newMovies]));
     } catch {}
   }, [me, lobbyTaste, room, votedIds, pool]);
 
@@ -166,26 +291,72 @@ const MovieSwiper = () => {
   const next    = ranked[idx + 1] || null;
   const after   = ranked[idx + 2] || null;
 
+  // Preload the next two poster images so the moment the front card flies
+  // off, the new front card already has its bytes ready. Without this the
+  // browser briefly painted the previous DOM <img> while it fetched the
+  // new src — the "wrong cover that changes" bug.
+  useEffect(() => {
+    [next, after].forEach(m => {
+      if (!m?.poster_path) return;
+      const url = posterUrl(m.poster_path, 'w780');
+      if (!url) return;
+      const img = new Image();
+      img.src = url;
+    });
+  }, [next?.id, after?.id]);
+
   useEffect(() => {
     if (room?.status !== 'live') return;
     const remaining = ranked.length - idx;
     if (remaining < REFILL_THRESHOLD && me && me.taste.likes >= 2) expandWithSimilar();
   }, [idx, ranked.length, room?.status, expandWithSimilar, me]);
 
+  // ── marcar como vista (swipe-up) ──────────────────────────────────────────
+  const markAsWatched = (movie) => {
+    if (!movie || !me || flyingOutRef.current) return;
+    flyingOutRef.current = movie;
+    haptic.light();
+    const capturedX   = dragOffsetRef.current.x;
+    const capturedY   = dragOffsetRef.current.y;
+    const capturedRot = capturedX * 0.04;
+    setFlyingOut({ movie, dir: 'up', startX: capturedX, startY: capturedY, startRot: capturedRot });
+    resetCardVisual(false);
+    dragOffsetRef.current = { x: 0, y: 0 };
+    setDragging(false);
+    startRef.current = null;
+    try {
+      // 1) Local: la mueve de "Quiero ver" a "Vistas"
+      markWatched(movie);
+      // 2) Sala: comparte con el resto de miembros para excluirla de sus swipes
+      const updated = markWatchedShared(roomId, movie);
+      setRoom(updated);
+    } catch {}
+    swipeCountRef.current += 1;
+    setSwipeCount(swipeCountRef.current);
+    setIdx(i => i + 1);
+    setTimeout(() => {
+      setFlyingOut(null);
+      flyingOutRef.current = null;
+    }, 440);
+  };
+
   // ── swipe ─────────────────────────────────────────────────────────────────
   const swipe = (dir, movie) => {
-    if (!movie || !me || flyingOut) return;
+    if (!movie || !me || flyingOutRef.current) return;
+    flyingOutRef.current = movie;
+    haptic.light();
 
     // Capture drag state so FlyingCard starts from the same visual position
-    const capturedX   = dragOffset.x;
-    const capturedY   = dragOffset.y * 0.3;
+    const capturedX   = dragOffsetRef.current.x;
+    const capturedY   = dragOffsetRef.current.y * 0.3;
     const capturedRot = capturedX * 0.08;
 
     // Launch the exit animation overlay
     setFlyingOut({ movie, dir, startX: capturedX, startY: capturedY, startRot: capturedRot });
 
     // Reset pointer state immediately so the next card is clean
-    setDragOffset({ x: 0, y: 0 });
+    resetCardVisual(false);
+    dragOffsetRef.current = { x: 0, y: 0 };
     setDragging(false);
     startRef.current = null;
 
@@ -205,7 +376,13 @@ const MovieSwiper = () => {
         votesSinceRerank.current = 0;
         const updatedTaste = blendTastes(updated.members.map(m => m.taste));
         const updatedVoted = getMemberVotedIds(updated, me.id);
-        setRanked(rankPool(ranked.slice(idx + 1), updatedTaste, updatedVoted));
+        // Filter out anything already voted (paranoid — rankPool uses
+        // `voted` for ranking but doesn't strip), and dedupe so a noisy
+        // pool can't surface the same id twice in the new ranking.
+        const remaining = dedupeById(
+          ranked.slice(idx + 1).filter(m => !updatedVoted.has(Number(m.id)))
+        );
+        setRanked(rankPool(remaining, updatedTaste, updatedVoted));
         setIdx(0);
         if (dir === 'right') expandWithSimilar();
       } else {
@@ -218,15 +395,29 @@ const MovieSwiper = () => {
     // Increment swipe counter (ref = no stale closure; state = drives re-render)
     swipeCountRef.current += 1;
     setSwipeCount(swipeCountRef.current);
-    const shouldPause = swipeCountRef.current % PAUSE_AT_SWIPES === 0;
+
+    const swipeTarget = room?.preferences?.swipeTarget ?? null;
+    const pauseAt = computePauseAt(swipeTarget);
+    const reachedTarget = swipeTarget && swipeCountRef.current >= swipeTarget;
+    const shouldPause = !reachedTarget && swipeCountRef.current % pauseAt === 0;
 
     // Stash pending match so the setTimeout closure doesn't capture stale state
     pendingMatchRef.current = madeMatchMovie;
     setTimeout(() => {
       setFlyingOut(null);
+      flyingOutRef.current = null;
       if (pendingMatchRef.current) {
+        haptic.match();
         setMatchMovie(pendingMatchRef.current);
         pendingMatchRef.current = null;
+        // Si tras el match hemos llegado al target, cierra también
+        if (reachedTarget) {
+          closeRoom(roomId);
+          navigate(`/room/${roomId}/analysis`, { replace: true });
+        }
+      } else if (reachedTarget) {
+        closeRoom(roomId);
+        navigate(`/room/${roomId}/analysis`, { replace: true });
       } else if (shouldPause) {
         setShowPause(true);
       }
@@ -234,41 +425,103 @@ const MovieSwiper = () => {
   };
 
   // ── pointer handlers ──────────────────────────────────────────────────────
+  // Live offset in a ref. The drag pipeline writes transforms directly to
+  // DOM nodes (cardRef, likeRef, …) — without going through React state —
+  // so a fast finger drag never triggers a per-frame re-render. This keeps
+  // the swipe glassy even on mid-range Android. setDragOffset is only used
+  // for the spring-back / programmatic reset cases.
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+
+  // DOM refs for the front (interactive) card and its three indicators.
+  // Wired from <SwipeCard interactive={true} cardRef={…} likeRef={…} … />.
+  const cardRef    = useRef(null);
+  const likeRef    = useRef(null);
+  const skipRef    = useRef(null);
+  const watchedRef = useRef(null);
+
+  // Apply transform/opacities directly to the DOM. Cheap; runs on every
+  // pointermove. The browser pipeline batches this onto the next paint.
+  const paintDrag = (x, y) => {
+    if (cardRef.current) {
+      cardRef.current.style.transform =
+        `translate3d(${x}px, ${y * 0.3}px, 0) rotate(${x * 0.08}deg)`;
+    }
+    const likeOp    = Math.min(1, Math.max(0, x / 100));
+    const skipOp    = Math.min(1, Math.max(0, -x / 100));
+    const watchedOp = Math.min(1, Math.max(0, -y / 100)) * (Math.abs(x) < 80 ? 1 : 0);
+    if (likeRef.current) {
+      likeRef.current.style.opacity   = String(Math.min(1, likeOp * 1.4));
+      likeRef.current.style.transform = `rotate(-12deg) scale(${0.65 + likeOp * 0.45})`;
+    }
+    if (skipRef.current) {
+      skipRef.current.style.opacity   = String(Math.min(1, skipOp * 1.4));
+      skipRef.current.style.transform = `rotate(12deg) scale(${0.65 + skipOp * 0.45})`;
+    }
+    if (watchedRef.current) {
+      watchedRef.current.style.opacity   = String(Math.min(1, watchedOp * 1.4));
+      watchedRef.current.style.transform = `translateX(-50%) scale(${0.65 + watchedOp * 0.45})`;
+    }
+  };
+
+  const resetCardVisual = (animated = true) => {
+    if (cardRef.current) {
+      // The prop-level `transition` already swaps to "ease-out 0.18s"
+      // once `dragging` flips to false, so we only need to set the
+      // transform here. (Setting transition imperatively too would
+      // race with React reapplying the prop on the next commit.)
+      cardRef.current.style.transition = animated ? 'transform 0.18s ease-out' : 'none';
+      cardRef.current.style.transform  = 'translate3d(0,0,0) rotate(0deg)';
+    }
+    if (likeRef.current)    { likeRef.current.style.opacity = '0'; }
+    if (skipRef.current)    { skipRef.current.style.opacity = '0'; }
+    if (watchedRef.current) { watchedRef.current.style.opacity = '0'; }
+  };
+
   const handlePointerDown = (e) => {
-    if (flyingOut) return;
+    if (flyingOutRef.current) return;
     startRef.current = { x: e.clientX, y: e.clientY };
     startTimeRef.current = Date.now();
+    dragOffsetRef.current = { x: 0, y: 0 };
     setDragging(true);
+    // Lock out the spring-back transition so the card follows the finger.
+    if (cardRef.current) cardRef.current.style.transition = 'none';
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
   };
   const handlePointerMove = (e) => {
     if (!startRef.current) return;
-    setDragOffset({ x: e.clientX - startRef.current.x, y: e.clientY - startRef.current.y });
+    const x = e.clientX - startRef.current.x;
+    const y = e.clientY - startRef.current.y;
+    dragOffsetRef.current = { x, y };
+    paintDrag(x, y);
   };
   const handlePointerUp = () => {
     if (!startRef.current) { setDragging(false); return; }
-    const { x, y } = dragOffset;
+    // Read the LIVE ref — same reason as before: state can lag on slower
+    // Android phones and would otherwise mismatch the user's final pos.
+    const { x, y } = dragOffsetRef.current;
     const dt   = Date.now() - startTimeRef.current;
     const dist = Math.hypot(x, y);
     if (dt < 260 && dist < 8 && current) {
       setDetailMovie(current);
-      setDragOffset({ x: 0, y: 0 });
+      resetCardVisual(false);
+      dragOffsetRef.current = { x: 0, y: 0 };
       setDragging(false);
       startRef.current = null;
+    } else if (y < -100 && Math.abs(x) < 80) {
+      // Swipe-up = marcar como vista
+      markAsWatched(current);
     } else if (x > 90) {
       swipe('right', current);
     } else if (x < -90) {
       swipe('left', current);
     } else {
-      setDragOffset({ x: 0, y: 0 });
+      // Spring back to centre with a short ease.
+      resetCardVisual(true);
+      dragOffsetRef.current = { x: 0, y: 0 };
       setDragging(false);
       startRef.current = null;
     }
   };
-
-  const rotate = dragOffset.x * 0.08;
-  const likeOp = Math.min(1, Math.max(0, dragOffset.x / 100));
-  const skipOp = Math.min(1, Math.max(0, -dragOffset.x / 100));
 
   // ── guards ────────────────────────────────────────────────────────────────
   if (!room) {
@@ -279,13 +532,9 @@ const MovieSwiper = () => {
       </div>
     );
   }
-  if (room.status === 'lobby') {
-    navigate(`/room/${roomId}/lobby`, { replace: true });
-    return null;
-  }
-  // Bug 1 fix: when host closes the room, all members land on the analysis screen
-  if (room.status === 'ended') {
-    navigate(`/room/${roomId}/analysis`, { replace: true });
+  if (room.status === 'lobby' || room.status === 'ended') {
+    // Render-time navigation is unreliable; the actual redirect is handled
+    // by the useEffect below (watches room.status). Render nothing meanwhile.
     return null;
   }
 
@@ -326,20 +575,69 @@ const MovieSwiper = () => {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {isHost && (
-            <IconButton
+          {isHost ? (
+            <button
+              type="button"
               onClick={() => {
-                if (window.confirm('¿Cerrar la sala para todos?')) {
+                haptic.medium();
+                if (window.confirm('¿Terminar la sala para todos? Veréis el análisis y los matches.')) {
+                  haptic.heavy();
                   closeRoom(roomId);
                   navigate(`/room/${roomId}/analysis`, { replace: true });
                 }
               }}
-              size={36} ariaLabel="Cerrar sala"
+              aria-label="Terminar sala"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                height: 36, padding: '0 14px', borderRadius: 999,
+                background: 'rgba(255,59,107,0.14)',
+                border: '1px solid rgba(255,59,107,0.45)',
+                color: '#FF7A99',
+                fontFamily: '"Space Grotesk", system-ui',
+                fontWeight: 800, fontSize: 12, letterSpacing: 0.6,
+                textTransform: 'uppercase', cursor: 'pointer',
+                transition: 'background 0.18s, transform 0.12s',
+              }}
+              onMouseDown={e => e.currentTarget.style.transform = 'scale(0.96)'}
+              onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M18 6L6 18M6 6l12 12" stroke="#FF3B6B" strokeWidth="2.5" strokeLinecap="round"/>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                <rect x="6" y="6" width="12" height="12" rx="2" fill="#FF7A99"/>
               </svg>
-            </IconButton>
+              Terminar
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (endRequestSent) return;
+                haptic.medium();
+                requestEndRoom(roomId, profile.id, profile.name || 'Invitado');
+                setEndRequestSent(true);
+                setTimeout(() => setEndRequestSent(false), 30000);
+              }}
+              disabled={endRequestSent}
+              aria-label="Solicitar terminar sala"
+              title="Pide al anfitrión que termine la sala"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                height: 36, padding: '0 12px', borderRadius: 999,
+                background: endRequestSent
+                  ? 'rgba(78,255,170,0.14)' : 'rgba(255,255,255,0.06)',
+                border: endRequestSent
+                  ? '1px solid rgba(78,255,170,0.45)'
+                  : '1px solid rgba(255,255,255,0.15)',
+                color: endRequestSent ? '#5BFFB0' : 'rgba(255,255,255,0.78)',
+                fontFamily: '"Space Grotesk", system-ui',
+                fontWeight: 700, fontSize: 11, letterSpacing: 0.5,
+                textTransform: 'uppercase',
+                cursor: endRequestSent ? 'default' : 'pointer',
+                transition: 'background 0.18s',
+              }}
+            >
+              {endRequestSent ? '✓ Enviada' : 'Pedir terminar'}
+            </button>
           )}
           <IconButton onClick={() => navigate(`/room/${roomId}/matches`)} size={40} ariaLabel="Matches">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
@@ -354,7 +652,7 @@ const MovieSwiper = () => {
       <ProgressBar
         swipeCount={swipeCount}
         matchCount={room.matches.length}
-        pauseAt={PAUSE_AT_SWIPES}
+        pauseAt={computePauseAt(room?.preferences?.swipeTarget)}
       />
 
       {/* ── Card stack ────────────────────────────────────────────────────── */}
@@ -365,10 +663,7 @@ const MovieSwiper = () => {
         maxWidth: 520, width: '100%', margin: '0 auto',
       }}>
         {isLoading && (
-          <div style={{ textAlign: 'center', color: FP.textDim, fontSize: 14 }}>
-            <div style={{ fontSize: 44 }}>🎞️</div>
-            <div style={{ marginTop: 10 }}>Buscando películas…</div>
-          </div>
+          <SwipeLoading/>
         )}
 
         {/* Empty state — only show once flyingOut animation also finishes */}
@@ -394,43 +689,66 @@ const MovieSwiper = () => {
 
         {!isLoading && (current || flyingOut) && (
           <>
-            {/* Back card — always transitions to give stack-breathing effect */}
+            {/* The three stack cards use POSITIONAL keys ("back" / "middle"
+                / "front") instead of movie.id so React reuses the same
+                DOM nodes when idx advances. That keeps:
+                  · the stack-breathing transition fluid (the middle card
+                    actually animates up to the front instead of being
+                    destroyed and re-created at the front position),
+                  · the front card's pointer refs / inline transform
+                    intact between swipes,
+                  · GC pressure low (no full Poster subtree re-mount).
+                The Poster itself uses key={real} on its inner <img> to
+                avoid the "wrong cover that switches" bug — that contract
+                still holds. */}
             {after && (
               <SwipeCard
-                key={after.id}
+                key="back"
                 movie={after}
                 style={{
                   zIndex: 1,
-                  transform: 'translate(0px, 24px) scale(0.88)',
+                  transform: 'translate3d(0px, 24px, 0) scale(0.88)',
                   opacity: 0.55,
                   transition: 'transform 0.44s cubic-bezier(0.2,0.8,0.3,1), opacity 0.44s',
+                  willChange: 'transform, opacity',
                 }}
               />
             )}
 
-            {/* Middle card */}
             {next && (
               <SwipeCard
-                key={next.id}
+                key="middle"
                 movie={next}
                 style={{
                   zIndex: 2,
-                  transform: 'translate(0px, 12px) scale(0.94)',
+                  transform: 'translate3d(0px, 12px, 0) scale(0.94)',
                   opacity: 0.82,
                   transition: 'transform 0.44s cubic-bezier(0.2,0.8,0.3,1), opacity 0.44s',
+                  willChange: 'transform, opacity',
                 }}
               />
             )}
 
-            {/* Front card — draggable */}
+            {/* Front card — draggable. Transform is set imperatively
+                via cardRef during drag (see paintDrag) — that path
+                bypasses React's render cycle entirely so a fast finger
+                drag never re-renders the tree. */}
             {current && (
               <SwipeCard
-                key={current.id}
+                key="front"
                 movie={current}
+                cardRef={cardRef}
+                likeRef={likeRef}
+                skipRef={skipRef}
+                watchedRef={watchedRef}
                 style={{
                   zIndex: 3,
-                  transform: `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px) scale(1) rotate(${rotate}deg)`,
-                  transition: dragging ? 'none' : 'transform 0.12s ease-out',
+                  transform: 'translate3d(0,0,0) rotate(0deg)',
+                  // 'none' while dragging so the imperative paint runs
+                  // 1:1 with the finger; a short ease enables the
+                  // spring-back to animate when the drag is released
+                  // without a swipe.
+                  transition: dragging ? 'none' : 'transform 0.18s ease-out',
                   cursor: dragging ? 'grabbing' : 'grab',
                   touchAction: 'none',
                 }}
@@ -438,8 +756,6 @@ const MovieSwiper = () => {
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerUp}
-                likeOp={likeOp}
-                skipOp={skipOp}
                 interactive={true}
               />
             )}
@@ -483,12 +799,20 @@ const MovieSwiper = () => {
               <circle cx="12" cy="8" r="1.2" fill="#4EFFD6"/>
             </svg>
           </ActionFAB>
+          <ActionFAB onClick={() => markAsWatched(current)} variant="watched" size={58}>
+            {/* Ojo = ya la he visto */}
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" stroke="#9B6BFF" strokeWidth="2" strokeLinejoin="round"/>
+              <circle cx="12" cy="12" r="3" stroke="#9B6BFF" strokeWidth="2"/>
+            </svg>
+          </ActionFAB>
         </div>
       )}
 
       {detailMovie && (
         <DetailSheet
           movie={detailMovie}
+          cartelera={!!room.preferences?.platforms?.includes('cartelera')}
           onClose={() => setDetailMovie(null)}
           onLike={() => { const m = detailMovie; setDetailMovie(null); swipe('right', m); }}
           onSkip={() => { const m = detailMovie; setDetailMovie(null); swipe('left', m); }}
@@ -499,6 +823,7 @@ const MovieSwiper = () => {
         <MatchOverlay
           movie={matchMovie}
           members={room.members}
+          cartelera={!!room.preferences?.platforms?.includes('cartelera')}
           onKeep={() => setMatchMovie(null)}
           onOpen={() => { setMatchMovie(null); navigate(`/room/${roomId}/matches`); }}
         />
@@ -516,9 +841,92 @@ const MovieSwiper = () => {
           }}
         />
       )}
+
+      {/* End-room request banner — pinned at the top while the guest's
+          request is active. We deliberately use a banner (not a one-off
+          popup) so the host can't miss it even if the WS reconnects or
+          the data syncs in pieces. Visible as long as room.endRequest
+          exists and isn't from this same user. */}
+      {isHost
+        && room?.endRequest
+        && room.endRequest.memberId !== profile?.id && (
+        <EndRequestBanner
+          requesterName={room.endRequest.memberName}
+          onIgnore={() => { haptic.light(); clearEndRequest(roomId); }}
+          onFinish={() => {
+            haptic.heavy();
+            clearEndRequest(roomId);
+            closeRoom(roomId);
+            navigate(`/room/${roomId}/analysis`, { replace: true });
+          }}
+        />
+      )}
     </div>
   );
 };
+
+// ── EndRequestBanner ─────────────────────────────────────────────────
+function EndRequestBanner({ requesterName, onIgnore, onFinish }) {
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200,
+      paddingTop: 'env(safe-area-inset-top, 0px)',
+      background: 'linear-gradient(180deg, rgba(255,107,74,0.96) 0%, rgba(255,59,107,0.92) 100%)',
+      borderBottom: '1px solid rgba(255,255,255,0.18)',
+      boxShadow: '0 12px 32px rgba(0,0,0,0.45), 0 2px 0 rgba(255,255,255,0.08) inset',
+      animation: 'fp-end-req-in 0.3s cubic-bezier(.2,.8,.3,1.1) both',
+    }}>
+      <div style={{
+        maxWidth: 520, margin: '0 auto',
+        padding: '14px 18px',
+        display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+        fontFamily: '"Space Grotesk", system-ui',
+      }}>
+        <div style={{
+          width: 36, height: 36, borderRadius: 999, flexShrink: 0,
+          background: 'rgba(255,255,255,0.20)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M3 12a9 9 0 1118 0 9 9 0 01-18 0zM12 8v4M12 16v.01"
+                  stroke="#fff" strokeWidth="2.4" strokeLinecap="round"/>
+          </svg>
+        </div>
+        <div style={{ flex: 1, minWidth: 140, color: '#fff' }}>
+          <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: 0.3 }}>
+            {requesterName || 'Un invitado'} pide terminar
+          </div>
+          <div style={{ fontSize: 11, opacity: 0.85, marginTop: 1 }}>
+            Decide: terminar la sala para todos o ignorar.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={onIgnore} style={{
+            padding: '8px 14px', borderRadius: 999,
+            background: 'rgba(255,255,255,0.18)',
+            border: '1px solid rgba(255,255,255,0.30)',
+            color: '#fff', fontWeight: 700, fontSize: 12,
+            cursor: 'pointer', fontFamily: '"Space Grotesk", system-ui',
+          }}>Ignorar</button>
+          <button onClick={onFinish} style={{
+            padding: '8px 14px', borderRadius: 999,
+            background: '#fff',
+            border: 'none', color: '#FF3B6B', fontWeight: 800, fontSize: 12,
+            cursor: 'pointer', fontFamily: '"Space Grotesk", system-ui',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.20)',
+          }}>Terminar</button>
+        </div>
+      </div>
+      <style>{`
+        @keyframes fp-end-req-in {
+          from { transform: translateY(-100%); opacity: 0; }
+          to   { transform: translateY(0); opacity: 1; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 
 // ── ProgressBar — stable component so CSS transition works across renders ────────
 function ProgressBar({ swipeCount, matchCount, pauseAt }) {
@@ -576,8 +984,10 @@ function FlyingCard({ movie, dir, startX, startY, startRot }) {
     return () => cancelAnimationFrame(id1);
   }, []);
 
-  const targetX   = dir === 'right' ? 900 : -900;
-  const targetRot = dir === 'right' ? 32  : -32;
+  const isUp = dir === 'up';
+  const targetX   = isUp ? 0 : (dir === 'right' ? 900 : -900);
+  const targetY   = isUp ? -1200 : 90;
+  const targetRot = isUp ? 0 : (dir === 'right' ? 32 : -32);
 
   return (
     <SwipeCard
@@ -586,19 +996,33 @@ function FlyingCard({ movie, dir, startX, startY, startRot }) {
         zIndex: 10,
         pointerEvents: 'none',
         transform: exited
-          ? `translate(${targetX}px, 90px) scale(1) rotate(${targetRot}deg)`
+          ? `translate(${targetX}px, ${targetY}px) scale(${isUp ? 0.85 : 1}) rotate(${targetRot}deg)`
           : `translate(${startX}px, ${startY}px) scale(1) rotate(${startRot}deg)`,
-        transition: exited ? 'transform 0.42s cubic-bezier(0.4,0,0.95,1)' : 'none',
+        transition: exited ? 'transform 0.42s cubic-bezier(0.4,0,0.95,1), opacity 0.42s ease' : 'none',
+        opacity: exited && isUp ? 0 : 1,
       }}
       likeOp={dir === 'right' ? 1 : 0}
       skipOp={dir === 'left'  ? 1 : 0}
+      watchedOp={dir === 'up' ? 1 : 0}
       interactive={true}
     />
   );
 }
 
 // ── SwipeCard ──────────────────────────────────────────────────────────────────
-function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = true, ...rest }) {
+// `cardRef` (when supplied) wires the outer DOM node to MovieSwiper so the
+// drag pipeline can transform it imperatively. `likeRef` / `skipRef` /
+// `watchedRef` do the same for the three swipe indicators — they're kept
+// mounted at opacity 0 and faded in directly via inline style during drag,
+// avoiding any per-frame React re-render. likeOp/skipOp/watchedOp props
+// remain for back-compat on FlyingCard (the exiting card overlay).
+function SwipeCard({
+  movie, style = {},
+  cardRef, likeRef, skipRef, watchedRef,
+  likeOp = 0, skipOp = 0, watchedOp = 0,
+  interactive = true,
+  ...rest
+}) {
   const year = movie?.release_date
     ? movie.release_date.slice(0, 4)
     : movie?.first_air_date?.slice(0, 4) || '';
@@ -627,7 +1051,7 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
   };
 
   return (
-    <div {...rest} style={{
+    <div ref={cardRef} {...rest} style={{
       position: 'absolute', top: 0, left: 22, right: 22, bottom: 0,
       borderRadius: 28, overflow: 'hidden',
       background: '#1a0f2e',
@@ -636,9 +1060,20 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
       backfaceVisibility: 'hidden',
       WebkitBackfaceVisibility: 'hidden',
       WebkitTransform: 'translateZ(0)',
+      // Stop the browser from selecting text or showing the long-press
+      // image menu mid-swipe (notorious Android Chrome behaviour).
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      WebkitTouchCallout: 'none',
       ...style,
     }}>
-      <Poster movie={movie} showBadge={true}/>
+      {/* Poster wrapped so its <img> swallows no pointer events — this
+          lets pointer capture on the parent card stay reliable on
+          Android Chrome, which otherwise can interpret an in-image touch
+          as the start of an image-save gesture. */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+        <Poster movie={movie} showBadge={true}/>
+      </div>
 
       {/* ── Trailer overlay ── */}
       {interactive && trailerOpen && trailerKey && (
@@ -675,44 +1110,65 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
         </div>
       )}
 
-      {/* ── Swipe indicators ── */}
-      {/* LIKE indicator — positioned on the LEFT so it stays visible as card moves right */}
-      {interactive && likeOp > 0.04 && (
-        <div style={{
-          position: 'absolute', top: 32, left: 18,
-          width: 62, height: 62, borderRadius: 999,
-          background: `rgba(74,222,128,${0.18 + likeOp * 0.18})`,
-          border: `3.5px solid rgba(74,222,128,${0.6 + likeOp * 0.4})`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transform: `rotate(-12deg) scale(${0.65 + likeOp * 0.45})`,
-          opacity: Math.min(1, likeOp * 1.4),
-          boxShadow: `0 0 ${likeOp * 32}px rgba(74,222,128,0.65)`,
-          backdropFilter: 'blur(4px)',
-          transition: 'none',
-        }}>
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-            <path d="M20 6L9 17l-5-5" stroke="#4ADE80" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </div>
-      )}
-      {/* NOPE indicator — positioned on the RIGHT so it stays visible as card moves left */}
-      {interactive && skipOp > 0.04 && (
-        <div style={{
-          position: 'absolute', top: 32, right: 18,
-          width: 62, height: 62, borderRadius: 999,
-          background: `rgba(255,59,107,${0.18 + skipOp * 0.18})`,
-          border: `3.5px solid rgba(255,59,107,${0.6 + skipOp * 0.4})`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transform: `rotate(12deg) scale(${0.65 + skipOp * 0.45})`,
-          opacity: Math.min(1, skipOp * 1.4),
-          boxShadow: `0 0 ${skipOp * 32}px rgba(255,59,107,0.65)`,
-          backdropFilter: 'blur(4px)',
-          transition: 'none',
-        }}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-            <path d="M6 6l12 12M6 18L18 6" stroke="#FF3B6B" strokeWidth="3" strokeLinecap="round"/>
-          </svg>
-        </div>
+      {/* ── Swipe indicators ── kept always-mounted on interactive cards.
+          Opacity / scale are driven imperatively from the parent's drag
+          handler (see paintDrag in MovieSwiper). FlyingCard still uses
+          the {like,skip,watched}Op props so the exit animation paints
+          the correct stamp on the flying card.
+          Perf: no backdrop-filter, simple drop shadow, willChange to
+          force GPU layer — these run at 60fps even on mid-range Android. */}
+      {interactive && (
+        <>
+          {/* LIKE — left side */}
+          <div ref={likeRef} style={{
+            position: 'absolute', top: 32, left: 18,
+            width: 62, height: 62, borderRadius: 999,
+            background: 'rgba(74,222,128,0.32)',
+            border: '3.5px solid rgba(74,222,128,0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transform: likeRef ? 'rotate(-12deg) scale(0.65)' : `rotate(-12deg) scale(${0.65 + likeOp * 0.45})`,
+            opacity: likeRef ? 0 : Math.min(1, likeOp * 1.4),
+            transition: 'none', pointerEvents: 'none',
+            willChange: 'opacity, transform',
+          }}>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+              <path d="M20 6L9 17l-5-5" stroke="#4ADE80" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          {/* WATCHED — top centre (drag-up) */}
+          <div ref={watchedRef} style={{
+            position: 'absolute', top: 32, left: '50%',
+            width: 70, height: 70, borderRadius: 999,
+            background: 'rgba(155,107,255,0.34)',
+            border: '3.5px solid rgba(155,107,255,0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transform: watchedRef ? 'translateX(-50%) scale(0.65)' : `translateX(-50%) scale(${0.65 + watchedOp * 0.45})`,
+            opacity: watchedRef ? 0 : Math.min(1, watchedOp * 1.4),
+            transition: 'none', pointerEvents: 'none',
+            willChange: 'opacity, transform',
+          }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" stroke="#9B6BFF" strokeWidth="2.5" strokeLinejoin="round"/>
+              <circle cx="12" cy="12" r="3.2" stroke="#9B6BFF" strokeWidth="2.5"/>
+            </svg>
+          </div>
+          {/* NOPE — right side */}
+          <div ref={skipRef} style={{
+            position: 'absolute', top: 32, right: 18,
+            width: 62, height: 62, borderRadius: 999,
+            background: 'rgba(255,59,107,0.32)',
+            border: '3.5px solid rgba(255,59,107,0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transform: skipRef ? 'rotate(12deg) scale(0.65)' : `rotate(12deg) scale(${0.65 + skipOp * 0.45})`,
+            opacity: skipRef ? 0 : Math.min(1, skipOp * 1.4),
+            transition: 'none', pointerEvents: 'none',
+            willChange: 'opacity, transform',
+          }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+              <path d="M6 6l12 12M6 18L18 6" stroke="#FF3B6B" strokeWidth="3" strokeLinecap="round"/>
+            </svg>
+          </div>
+        </>
       )}
 
       {/* Bottom info */}
@@ -795,9 +1251,9 @@ function SwipeCard({ movie, style = {}, likeOp = 0, skipOp = 0, interactive = tr
 
 // ── ActionFAB ─────────────────────────────────────────────────────────────────
 function ActionFAB({ children, onClick, variant, size }) {
-  const bgs     = { skip: 'rgba(255,59,107,0.1)', like: FP.flame,  info: 'rgba(78,255,214,0.1)' };
-  const borders = { skip: '1.5px solid rgba(255,59,107,0.3)', like: 'none', info: '1.5px solid rgba(78,255,214,0.3)' };
-  const shadows = { skip: '0 6px 20px rgba(255,59,107,0.2)', like: '0 10px 32px rgba(255,59,107,0.5)', info: '0 6px 20px rgba(78,255,214,0.15)' };
+  const bgs     = { skip: 'rgba(255,59,107,0.1)', like: FP.flame,  info: 'rgba(78,255,214,0.1)', watched: 'rgba(155,107,255,0.10)' };
+  const borders = { skip: '1.5px solid rgba(255,59,107,0.3)', like: 'none', info: '1.5px solid rgba(78,255,214,0.3)', watched: '1.5px solid rgba(155,107,255,0.35)' };
+  const shadows = { skip: '0 6px 20px rgba(255,59,107,0.2)', like: '0 10px 32px rgba(255,59,107,0.5)', info: '0 6px 20px rgba(78,255,214,0.15)', watched: '0 6px 20px rgba(155,107,255,0.20)' };
   return (
     <button onClick={onClick} style={{
       width: size, height: size, borderRadius: 999,
@@ -816,7 +1272,7 @@ function ActionFAB({ children, onClick, variant, size }) {
 
 // ── MatchOverlay ──────────────────────────────────────────────────────────────
 // Bug 2 fix: much bigger "¡MATCH!" title, explosive gradient, rounder font, more confetti
-function MatchOverlay({ movie, members, onKeep, onOpen }) {
+function MatchOverlay({ movie, members, cartelera = false, onKeep, onOpen }) {
   const [show, setShow]         = useState(false);
   const [providers, setProviders] = useState(null);
 
@@ -872,7 +1328,7 @@ function MatchOverlay({ movie, members, onKeep, onOpen }) {
           transition: 'all 0.62s cubic-bezier(.2,.8,.3,1.35)',
         }}>
           <div style={{
-            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontFamily: '"Inter", "Space Grotesk", sans-serif',
             fontSize: 90, fontWeight: 900, lineHeight: 0.88,
             letterSpacing: -5,
             background: 'linear-gradient(140deg, #FF6B4A 0%, #FF3B6B 45%, #BF5AF2 100%)',
@@ -908,7 +1364,7 @@ function MatchOverlay({ movie, members, onKeep, onOpen }) {
           transition: 'all 0.52s 0.22s',
         }}>
           <div style={{
-            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontFamily: '"Inter", "Space Grotesk", sans-serif',
             fontSize: 28, fontWeight: 800,
             color: '#fff', letterSpacing: -0.8, lineHeight: 1.08,
           }}>{movie.title || movie.name}</div>
@@ -990,25 +1446,28 @@ function MatchOverlay({ movie, members, onKeep, onOpen }) {
                 );
               })}
             </div>
-          ) : (
+          ) : cartelera ? (
+            // Solo cuando la sala incluyó cartelera y no hay plataforma
+            // → la peli es claramente de cines, mostramos showtimes.
             <button
-              onClick={() => window.open(fallbackUrl, '_blank')}
+              onClick={() => openShowtimes(movie.title || movie.name)}
               style={{
-                width: '100%', height: 48, borderRadius: 999,
-                background: 'rgba(78,255,214,0.12)',
-                border: '1.5px solid rgba(78,255,214,0.3)',
-                color: '#4EFFD6', fontWeight: 700, fontSize: 15,
+                width: '100%', height: 52, borderRadius: 999,
+                background: 'linear-gradient(135deg, rgba(59,130,246,0.30), rgba(59,130,246,0.16))',
+                border: '1.5px solid rgba(96,165,250,0.55)',
+                color: '#93C5FD', fontWeight: 700, fontSize: 15,
                 cursor: 'pointer', fontFamily: '"Space Grotesk"',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                boxShadow: '0 6px 18px rgba(59,130,246,0.22)',
               }}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"
-                      stroke="#4EFFD6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+                <path d="M12 21s-7-7.5-7-12a7 7 0 1114 0c0 4.5-7 12-7 12z" stroke="#93C5FD" strokeWidth="2" strokeLinejoin="round"/>
+                <circle cx="12" cy="9" r="2.5" stroke="#93C5FD" strokeWidth="2"/>
               </svg>
-              Ver ahora
+              Sesiones cerca de ti
             </button>
-          )}
+          ) : null}
           <button onClick={onKeep} style={{
             width: '100%', height: 52, borderRadius: 999,
             background: 'transparent', border: '1px solid rgba(255,255,255,0.18)',
@@ -1120,7 +1579,7 @@ function MidSessionPause({ swipeCount, matchCount, members, onContinue, onEnd })
           textAlign: 'center',
         }}>
           <div style={{
-            fontFamily: '"Syne", "Space Grotesk", sans-serif',
+            fontFamily: '"Inter", "Space Grotesk", sans-serif',
             fontSize: 34, fontWeight: 900, lineHeight: 1.05, letterSpacing: -1,
             color: '#fff',
           }}>¿Seguís o lo dejamos?</div>
@@ -1146,7 +1605,7 @@ function MidSessionPause({ swipeCount, matchCount, members, onContinue, onEnd })
             }}>
               <div style={{ fontSize: 22 }}>{s.emoji}</div>
               <div style={{
-                fontFamily: '"Syne", sans-serif', fontSize: 26, fontWeight: 800,
+                fontFamily: '"Inter", sans-serif', fontSize: 26, fontWeight: 800,
                 color: '#fff', lineHeight: 1.1, marginTop: 4,
               }}>{s.value}</div>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 600, marginTop: 2 }}>
@@ -1199,7 +1658,7 @@ function MidSessionPause({ swipeCount, matchCount, members, onContinue, onEnd })
             boxShadow: '0 10px 28px rgba(255,59,107,0.38)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           }}>
-            <span style={{ fontSize: 20 }}>🔥</span> Seguir deslizando
+            Seguir deslizando
           </button>
           <button onClick={onEnd} style={{
             width: '100%', height: 54, borderRadius: 999,
@@ -1222,6 +1681,100 @@ function MidSessionPause({ swipeCount, matchCount, members, onContinue, onEnd })
           Si finalizáis, se cerrará la sala para ambos y<br/>veréis el análisis completo de la sesión.
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── SwipeLoading — pantalla de carga visual con stack de pósters falsos ─
+// que rotan y un mensaje friendly. Mejor que un emoji + texto plano.
+function SwipeLoading() {
+  // Posters provisionales — gradientes flame para no hacer fetch extra.
+  const cards = [
+    { gradient: 'linear-gradient(160deg, #1A0F2E, #FF3B6B)' },
+    { gradient: 'linear-gradient(160deg, #5B1DB5, #FF6B4A)' },
+    { gradient: 'linear-gradient(160deg, #FFB547, #FF3B6B)' },
+    { gradient: 'linear-gradient(160deg, #0E0719, #9B3BFF)' },
+  ];
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      gap: 26, padding: '0 24px',
+    }}>
+      {/* Animated stack */}
+      <div style={{
+        position: 'relative', width: 180, height: 240,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        perspective: 800,
+      }}>
+        {/* Halo pulsante detrás */}
+        <div style={{
+          position: 'absolute', width: 220, height: 220, borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(255,107,74,0.40) 0%, transparent 60%)',
+          filter: 'blur(28px)',
+          animation: 'fp-swl-halo 2.4s ease-in-out infinite',
+        }}/>
+        {cards.map((c, i) => (
+          <div key={i} style={{
+            position: 'absolute', width: 130, height: 200, borderRadius: 18,
+            background: c.gradient,
+            boxShadow: '0 18px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.10)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            animation: `fp-swl-deal 3.2s ${i * 0.4}s cubic-bezier(.4,.0,.2,1) infinite`,
+            transformOrigin: 'center 110%',
+          }}>
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'linear-gradient(to top, rgba(0,0,0,0.55), transparent 50%)',
+              borderRadius: 18,
+            }}/>
+          </div>
+        ))}
+      </div>
+
+      {/* Friendly text + small bouncy dots */}
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+        fontFamily: '"Space Grotesk", system-ui',
+      }}>
+        <div style={{
+          fontSize: 18, fontWeight: 800, color: '#fff', letterSpacing: -0.4,
+          background: 'linear-gradient(135deg, #FFB547 0%, #FF6B4A 30%, #FF3B6B 65%, #9B3BFF 100%)',
+          WebkitBackgroundClip: 'text', backgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+        }}>
+          Preparando vuestras pelis
+        </div>
+        <div style={{ fontSize: 13, color: 'rgba(245,242,255,0.65)' }}>
+          Encajando gustos del grupo…
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{
+              width: 7, height: 7, borderRadius: 999,
+              background: 'linear-gradient(135deg, #FF6B4A, #FF3B6B)',
+              animation: `fp-swl-dot 1.1s ${i * 0.18}s ease-in-out infinite`,
+            }}/>
+          ))}
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes fp-swl-deal {
+          0%   { transform: translateY(8px) rotate(-3deg) scale(0.92); opacity: 0; }
+          15%  { transform: translateY(0) rotate(-2deg) scale(1); opacity: 1; }
+          70%  { transform: translateY(0) rotate(2deg) scale(1); opacity: 1; }
+          85%  { transform: translateY(-22px) rotate(8deg) scale(0.95); opacity: 0; }
+          100% { transform: translateY(-22px) rotate(8deg) scale(0.95); opacity: 0; }
+        }
+        @keyframes fp-swl-halo {
+          0%, 100% { opacity: 0.55; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.12); }
+        }
+        @keyframes fp-swl-dot {
+          0%, 100% { transform: translateY(0); opacity: 0.4; }
+          50% { transform: translateY(-6px); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

@@ -25,10 +25,25 @@ export function Poster({ movie, showBadge = true, size = 'w780', style = {} }) {
       ...style,
     }}>
       {real ? (
-        <img src={real} alt={title} style={{
-          position: 'absolute', inset: 0, width: '100%', height: '100%',
-          objectFit: 'cover', display: 'block',
-        }} draggable={false}/>
+        // key={real} forces React to mount a fresh <img> when the URL
+        // changes — without it the browser briefly shows the previous
+        // poster while the new bytes download (bug: "wrong cover that
+        // changes after a moment"). Combined with the fade-in onLoad,
+        // every poster appears only once it's actually decoded.
+        <img
+          key={real}
+          src={real}
+          alt={title}
+          loading="eager"
+          decoding="async"
+          onLoad={(e) => { e.currentTarget.style.opacity = '1'; }}
+          style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            objectFit: 'cover', display: 'block',
+            opacity: 0, transition: 'opacity 0.18s ease-out',
+          }}
+          draggable={false}
+        />
       ) : (
         <GenerativeBackdrop hue={hue} seed={seed}/>
       )}
