@@ -241,23 +241,45 @@ _Swipe · Match · Watch_`;
                 }}/>
               </div>
             ))}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '12px 14px', borderRadius: 18,
-              border: '1px dashed rgba(255,255,255,0.15)',
-            }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: 999,
-                background: 'rgba(255,255,255,0.05)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: FP.textMuted,
-              }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <div style={{ fontSize: 14, color: FP.textDim }}>Esperando a que se unan…</div>
-            </div>
+            {room.members.length < 8 && (
+              <button
+                type="button"
+                onClick={shareNative}
+                className="fp-invite-slot"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  width: '100%', textAlign: 'left',
+                  padding: '12px 14px', borderRadius: 18,
+                  border: '1px dashed rgba(255,107,74,0.35)',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  color: 'inherit', font: 'inherit',
+                  transition: 'transform 0.12s, background 0.2s, border-color 0.2s',
+                }}
+              >
+                <div style={{
+                  width: 40, height: 40, borderRadius: 999,
+                  background: 'linear-gradient(135deg, rgba(255,107,74,0.18), rgba(255,59,107,0.18))',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#FF7A99',
+                  flexShrink: 0,
+                }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 3v12M12 3l-4 4M12 3l4 4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M5 11v8a2 2 0 002 2h10a2 2 0 002-2v-8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: FP.text }}>
+                    {room.members.length === 1 ? 'Estás tú solo' : `Sois ${room.members.length} de 8`}
+                    <span style={{ color: '#FF7A99', marginLeft: 6 }}>· invita a más</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: FP.textMuted, marginTop: 2 }}>
+                    Toca aquí para compartir · hasta 8 personas
+                  </div>
+                </div>
+              </button>
+            )}
           </div>
         </div>
 

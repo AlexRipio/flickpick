@@ -200,6 +200,19 @@ input[type=range]::-webkit-slider-thumb {
   0%,100% { transform: scale(1);    opacity: 0.55; }
   50%     { transform: scale(1.08); opacity: 0.85; }
 }
+@keyframes fp-invite-pulse {
+  0%,100% {
+    border-color: rgba(255,107,74,0.30);
+    box-shadow: 0 0 0 0 rgba(255,107,74,0);
+  }
+  50% {
+    border-color: rgba(255,107,74,0.70);
+    box-shadow: 0 0 0 4px rgba(255,107,74,0.10);
+  }
+}
+.fp-invite-slot { animation: fp-invite-pulse 2.4s ease-in-out infinite; }
+.fp-invite-slot:hover  { background: rgba(255,107,74,0.06) !important; }
+.fp-invite-slot:active { transform: scale(0.985); }
 @keyframes fp-nav-glow-in {
   0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
   100% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
