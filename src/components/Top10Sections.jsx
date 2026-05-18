@@ -305,6 +305,31 @@ const Top10Sections = ({ tab, onOpenItem }) => {
 function ReorderSheet({ orderedKeys, onClose, onReorder }) {
   const [keys, setKeys] = useState(orderedKeys);
   const [dragKey, setDragKey] = useState(null);
+  // Pull-to-close on the top handle
+  const [dragHandleY, setDragHandleY] = useState(0);
+  const handleStartRef = useRef(null);
+  const onHandleDown = (e) => {
+    handleStartRef.current = e.clientY;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  };
+  const onHandleMove = (e) => {
+    if (handleStartRef.current == null) return;
+    const dy = e.clientY - handleStartRef.current;
+    setDragHandleY(Math.max(0, dy));
+  };
+  const onHandleUp = (e) => {
+    if (handleStartRef.current == null) return;
+    const dy = e.clientY - handleStartRef.current;
+    handleStartRef.current = null;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    if (dy > 80) {
+      // Animate out then close
+      setDragHandleY(window.innerHeight);
+      setTimeout(() => onClose(), 180);
+    } else {
+      setDragHandleY(0);
+    }
+  };
   // lastSwapY: posición Y del dedo en el último swap (o en pointerdown)
   const dragRef = useRef({ lastSwapY: 0, rowHeight: 56 });
   const itemRefs = useRef(new Map());
@@ -439,7 +464,7 @@ function ReorderSheet({ orderedKeys, onClose, onReorder }) {
     <div
       onClick={cancel}
       style={{
-        position: 'fixed', inset: 0, zIndex: 200,
+        position: 'fixed', inset: 0, zIndex: 1300,
         background: 'rgba(0,0,0,0.55)',
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
         animation: 'fp-fade-in 0.2s ease-out',
@@ -452,13 +477,30 @@ function ReorderSheet({ orderedKeys, onClose, onReorder }) {
           background: '#0F0420',
           borderTopLeftRadius: 24, borderTopRightRadius: 24,
           borderTop: '1px solid rgba(255,255,255,0.10)',
-          padding: '16px 16px calc(env(safe-area-inset-bottom, 0px) + 16px)',
+          // BottomNav floats ~80px above the viewport bottom in PWA mode;
+          // pad the sheet bottom enough so the action buttons clear it.
+          padding: '16px 16px calc(env(safe-area-inset-bottom, 0px) + 96px)',
           boxShadow: '0 -24px 60px rgba(0,0,0,0.55)',
           animation: 'fp-slide-up 0.24s cubic-bezier(.2,.8,.3,1)',
-          maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+          maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+          transform: `translateY(${dragHandleY}px)`,
+          transition: dragHandleY === 0 ? 'transform 0.24s cubic-bezier(.2,.8,.3,1)' : 'none',
         }}
       >
-        <div style={{ width: 44, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.18)', margin: '0 auto 14px' }}/>
+        <div
+          onPointerDown={onHandleDown}
+          onPointerMove={onHandleMove}
+          onPointerUp={onHandleUp}
+          onPointerCancel={onHandleUp}
+          style={{
+            // Larger touch target (24px high) with a visual bar in the middle.
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: '100%', height: 24, marginBottom: 6,
+            cursor: 'grab', touchAction: 'none',
+          }}
+        >
+          <div style={{ width: 44, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.32)' }}/>
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '0 8px 4px' }}>
           <h3 style={{ fontSize: 18, fontWeight: 800, color: '#fff', margin: 0 }}>Tu orden</h3>
@@ -467,7 +509,7 @@ function ReorderSheet({ orderedKeys, onClose, onReorder }) {
           </span>
         </div>
 
-        <div style={{ overflowY: 'auto', padding: '10px 4px', flex: '0 1 auto' }}>
+        <div style={{ overflowY: 'auto', padding: '10px 4px', flex: 1, minHeight: 0 }}>
           {keys.map((k, idx) => {
             const p = PLATFORM_BY_KEY[k];
             if (!p) return null;
