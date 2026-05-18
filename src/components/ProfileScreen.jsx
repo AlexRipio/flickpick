@@ -61,8 +61,15 @@ const ProfileScreen = () => {
       } else {
         await subscribePush();
         setPushOn(true);
-        // Send a test push so the user sees it work immediately.
-        try { await sendTestPush(); } catch {}
+        // Send a test push only on QA so devs can verify the pipeline.
+        // In production we don't want to fire a "test" notification that
+        // looks like spam to a real user enabling notifications.
+        try {
+          const host = typeof window !== 'undefined' ? window.location.hostname : '';
+          if (host.startsWith('qa.') || host === 'localhost') {
+            await sendTestPush();
+          }
+        } catch {}
       }
     } catch (e) {
       setPushMsg(e?.message || 'Error');
@@ -239,8 +246,11 @@ const ProfileScreen = () => {
   const [notifClearedAt, setNotifClearedAt] = useState(0);
   const clearAllNotifications = () => {
     if (!profile?.id) return;
-    const touched = markAllMatchesSeen(profile.id);
-    import('@/lib/badging').then(({ recomputeBadge, clearBadge }) => {
+    markAllMatchesSeen(profile.id);
+    import('@/lib/badging').then(({ recomputeBadge, clearBadge, markAllNotificationsCleared }) => {
+      // Hard clean slate: any match older than NOW stops counting for
+      // the badge, even if its seenBy[] never reached this device.
+      markAllNotificationsCleared(profile.id);
       clearBadge();
       recomputeBadge(profile.id);
     }).catch(() => {});

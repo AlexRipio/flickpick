@@ -41,6 +41,24 @@ export function clearBadge() {
 // growing unbounded with the user's full match history.
 const MATCH_FRESH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+// "Clean slate" timestamp: when the user pulls "Marcar todas como
+// vistas", we stamp this and the badge then ignores ANYTHING older,
+// regardless of seenBy. Survives cross-device syncs that lack a
+// reliable seenBy[] format.
+const LAST_CLEAR_KEY = (userId) => `flickpick.notif.lastClearAt.${userId}`;
+function getLastClearAt(profileId) {
+  if (!profileId) return 0;
+  try {
+    const v = localStorage.getItem(LAST_CLEAR_KEY(profileId));
+    const n = v ? parseInt(v, 10) : 0;
+    return Number.isFinite(n) ? n : 0;
+  } catch { return 0; }
+}
+export function markAllNotificationsCleared(profileId) {
+  if (!profileId) return;
+  try { localStorage.setItem(LAST_CLEAR_KEY(profileId), String(Date.now())); } catch {}
+}
+
 let recomputeTimer = null;
 export function recomputeBadge(profileId) {
   if (!supported()) return;
@@ -50,6 +68,7 @@ export function recomputeBadge(profileId) {
     try {
       let count = 0;
       const cutoff = Date.now() - MATCH_FRESH_WINDOW_MS;
+      const clearAt = getLastClearAt(profileId);
       const all = JSON.parse(localStorage.getItem('flickpick.rooms.v1') || '{}');
       for (const r of Object.values(all)) {
         if (!r || !profileId) continue;
@@ -58,16 +77,32 @@ export function recomputeBadge(profileId) {
         const isMember = r.members?.some(m => m.id === profileId);
         const isOwner  = r.ownerId === profileId;
         if (!isMember && !isOwner) continue;
-        // End-room request pending and not from this user (host needs to act)
-        if (isOwner && r.endRequest && r.endRequest.memberId !== profileId) count += 1;
-        // Unseen matches in the freshness window
+        // End-room request pending and not from this user (host needs to act).
+        // Only counts if it was raised after the last "clear all" stamp.
+        if (isOwner && r.endRequest && r.endRequest.memberId !== profileId) {
+          const reqTs = r.endRequest.requestedAt || 0;
+          if (reqTs > clearAt) count += 1;
+        }
+        // Unseen matches in the freshness window and after lastClearAt.
+        // Dedupe by movieId per room: cross-device sync can leave the
+        // same match recorded multiple times (different matchedAt or
+        // appended from each subscribed device), and we don't want a
+        // single match to count as 11.
         if (Array.isArray(r.matches)) {
+          const counted = new Set();
           for (const m of r.matches) {
             if (!m) continue;
+            const id = m.movieId ?? m.movie?.id;
+            if (id != null && counted.has(id)) continue;
             const seen = Array.isArray(m.seenBy) ? m.seenBy : [];
             if (seen.includes(profileId)) continue;
             const ts = m.matchedAt || m.createdAt || 0;
             if (ts && ts < cutoff) continue;
+            // Hard "clean slate" — ignore anything older than the user's
+            // most recent "Marcar todas como vistas" tap, even if seenBy
+            // never made it onto the record.
+            if (clearAt && (!ts || ts <= clearAt)) continue;
+            if (id != null) counted.add(id);
             count += 1;
           }
         }
