@@ -26,7 +26,7 @@ export default function HomeSkeleton() {
         className="no-scrollbar"
         style={{
           position: 'relative', zIndex: 2,
-          padding: '24px 24px 80px', flex: 1, overflow: 'hidden',
+          padding: '24px 24px var(--fp-content-bottom)', flex: 1, overflow: 'hidden',
           maxWidth: 520, width: '100%', margin: '0 auto',
           animation: 'fp-fade-in 0.35s ease-out both',
         }}

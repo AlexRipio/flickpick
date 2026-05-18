@@ -60,7 +60,7 @@ const MatchesHistory = () => {
       {/* Content */}
       <div className="no-scrollbar" style={{
         position: 'relative', zIndex: 2, flex: 1, overflowY: 'auto',
-        padding: '6px 24px 48px', maxWidth: 520, width: '100%', margin: '0 auto',
+        padding: '6px 24px var(--fp-content-bottom)', maxWidth: 520, width: '100%', margin: '0 auto',
       }}>
         <h1 style={{
           fontFamily: '"Inter", "Space Grotesk", sans-serif',

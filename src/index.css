@@ -11,6 +11,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global bottom padding for screens that show the BottomNav.
+   80px BottomNav (FAB sobresale) + 30px holgura + safe-area-inset-bottom.
+   Variables for sheet/modal usage too. */
+:root {
+  --fp-content-bottom: calc(env(safe-area-inset-bottom, 0px) + 110px);
+  --fp-sheet-bottom:   calc(env(safe-area-inset-bottom, 0px) + 120px);
+}
+
 @font-face {
   font-family: 'Space Grotesk';
   font-style: normal;

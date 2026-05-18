@@ -6,13 +6,14 @@ import { FP, memberColor } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
 import { getTrending, posterUrl } from '@/lib/tmdb';
 import { isInWatchlist, toggleWatchlist } from '@/lib/watchlist';
-import { subscribe } from '@/lib/roomStore';
+import { subscribe, closeRoom } from '@/lib/roomStore';
 import { getWatchlist, subscribeWatchlist } from '@/lib/watchlist';
 import OnboardingTutorial, { hasSeenOnboarding } from '@/components/OnboardingTutorial';
 import UpdatesModal from '@/components/UpdatesModal';
 import { shouldShowUpdates } from '@/lib/appVersion';
 import DetailSheet from '@/components/DetailSheet';
 import HomeSkeleton from '@/components/HomeSkeleton';
+import ActiveRoomCard from '@/components/ActiveRoomCard';
 
 function getTimeOfDay() {
   const hour = new Date().getHours();
@@ -102,6 +103,14 @@ const HomeScreen = () => {
       if (typeof t === 'string') return Date.parse(t) || 0;
       return t || 0;
     };
+    // Rooms the user has explicitly dismissed via swipe — kept locally
+    // so server sync (which may still report them as live for a few
+    // seconds) cannot resurrect them on the home screen.
+    let dismissedIds = new Set();
+    try {
+      const raw = JSON.parse(localStorage.getItem('flickpick.dismissedRooms.v1') || '[]');
+      if (Array.isArray(raw)) dismissedIds = new Set(raw);
+    } catch {}
     for (const r of Object.values(all)) {
       if (!r) continue;
       if (!profile?.id) continue;
@@ -109,6 +118,7 @@ const HomeScreen = () => {
       const isOwner  = r.ownerId === profile.id;
       if (!isMember && !isOwner) continue;
       mine.push(r);
+      if (dismissedIds.has(r.id)) continue;
       if (r.status !== 'ended' && lastTouchedAt(r) >= cutoff) {
         if (!active || lastTouchedAt(r) > lastTouchedAt(active)) active = r;
       }
@@ -132,7 +142,7 @@ const HomeScreen = () => {
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <AmbientBackdrop hue={290}/>
-      <div className="no-scrollbar" style={{ position: 'relative', zIndex: 2, padding: '24px 24px 80px', flex: 1, overflow: 'auto', maxWidth: 520, width: '100%', margin: '0 auto' }}>
+      <div className="no-scrollbar" style={{ position: 'relative', zIndex: 2, padding: '24px 24px var(--fp-content-bottom)', flex: 1, overflow: 'auto', maxWidth: 520, width: '100%', margin: '0 auto' }}>
 
         {/* ── Header ────────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
@@ -181,35 +191,22 @@ const HomeScreen = () => {
           </h1>
         </div>
 
-        {/* ── Resume active room ─────────────────────────────────────────── */}
+        {/* ── Resume active room (swipe right to dismiss) ────────────────── */}
         {activeRoom && (
-          <div onClick={() => navigate(activeRoom.status === 'lobby' ? `/room/${activeRoom.id}/lobby` : `/room/${activeRoom.id}`)} style={{
-            background: FP.flame, borderRadius: 22, padding: 18, marginBottom: 20,
-            cursor: 'pointer', boxShadow: '0 12px 30px rgba(255,59,107,0.3)',
-            display: 'flex', alignItems: 'center', gap: 14,
-          }}>
-            <div style={{
-              width: 48, height: 48, borderRadius: 14, background: 'rgba(255,255,255,0.2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z"/></svg>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.85)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
-                Sigue donde lo dejaste
-              </div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginTop: 2 }}>
-                {activeRoom.name || `Sala · ${activeRoom.joinCode}`}
-              </div>
-              {activeRoom.name && (
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 1, fontFamily: 'ui-monospace, Menlo, monospace' }}>#{activeRoom.joinCode}</div>
-              )}
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>
-                {activeRoom.members?.length || 0} deslizando · {activeRoom.matches?.length || 0} matches
-              </div>
-            </div>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M9 6l6 6-6 6"/></svg>
-          </div>
+          <ActiveRoomCard
+            room={activeRoom}
+            onOpen={() => navigate(activeRoom.status === 'lobby' ? `/room/${activeRoom.id}/lobby` : `/room/${activeRoom.id}`)}
+            onDismiss={() => {
+              try {
+                const raw = JSON.parse(localStorage.getItem('flickpick.dismissedRooms.v1') || '[]');
+                const set = new Set(Array.isArray(raw) ? raw : []);
+                set.add(activeRoom.id);
+                localStorage.setItem('flickpick.dismissedRooms.v1', JSON.stringify([...set]));
+              } catch {}
+              try { closeRoom(activeRoom.id); } catch {}
+              setTick(t => t + 1);
+            }}
+          />
         )}
 
         {/* ── Action cards ───────────────────────────────────────────────── */}

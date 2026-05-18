@@ -5,9 +5,12 @@ import OnboardingTutorial, { resetOnboarding } from '@/components/OnboardingTuto
 import UpdatesModal from '@/components/UpdatesModal';
 import DeleteAccountSheet from '@/components/DeleteAccountSheet';
 import InstallAppSheet from '@/components/InstallAppSheet';
+import AvatarCropSheet from '@/components/AvatarCropSheet';
+import { getLibrary, subscribeLibrary, removeFromLibrary, addToLibrary } from '@/lib/avatarLibrary';
 import { isStandalone } from '@/lib/installApp';
 import haptic, { isHapticSupported, isHapticEnabled, setHapticEnabled } from '@/lib/haptic';
 import { manualSyncNow, repushLocalRooms } from '@/lib/userSync';
+import { markAllMatchesSeen } from '@/lib/roomStore';
 import { pushSupported, isPushSubscribed, subscribePush, unsubscribePush, sendTestPush } from '@/lib/push';
 import { APP_VERSION } from '@/lib/appVersion';
 import { AmbientBackdrop, Avatar, BackButton, TextField, GradientButton } from '@/components/fp/primitives';
@@ -233,6 +236,18 @@ const ProfileScreen = () => {
     setAvatarOpen(false);
   };
 
+  const [notifClearedAt, setNotifClearedAt] = useState(0);
+  const clearAllNotifications = () => {
+    if (!profile?.id) return;
+    const touched = markAllMatchesSeen(profile.id);
+    import('@/lib/badging').then(({ recomputeBadge, clearBadge }) => {
+      clearBadge();
+      recomputeBadge(profile.id);
+    }).catch(() => {});
+    setNotifClearedAt(Date.now());
+    setTimeout(() => setNotifClearedAt(0), 2400);
+  };
+
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}>
       <AmbientBackdrop hue={280}/>
@@ -249,7 +264,7 @@ const ProfileScreen = () => {
 
       <div className="no-scrollbar" style={{
         position: 'relative', zIndex: 2, flex: 1, overflowY: 'auto',
-        padding: '6px 24px 40px', maxWidth: 520, width: '100%', margin: '0 auto',
+        padding: '6px 24px var(--fp-content-bottom)', maxWidth: 520, width: '100%', margin: '0 auto',
       }}>
         {/* Avatar + name */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, marginTop: 6, marginBottom: 26 }}>
@@ -517,6 +532,25 @@ const ProfileScreen = () => {
 
         <div style={{
           borderRadius: 20, overflow: 'hidden',
+          border: '1px solid rgba(255,255,255,0.08)',
+          background: 'rgba(255,255,255,0.03)',
+          marginBottom: 16,
+        }}>
+          <SettingRow
+            icon={
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0a3 3 0 01-6 0m6 0H9"
+                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            }
+            label={notifClearedAt ? 'Notificaciones limpiadas ✓' : 'Marcar notificaciones como vistas'}
+            onClick={clearAllNotifications}
+            hideChevron
+          />
+        </div>
+
+        <div style={{
+          borderRadius: 20, overflow: 'hidden',
           border: '1px solid rgba(255,59,107,0.2)',
           background: 'rgba(255,59,107,0.05)',
         }}>
@@ -641,15 +675,17 @@ const ProfileScreen = () => {
 
 // ── AI styles ─────────────────────────────────────────────────────────────────
 // Style IDs match the backend prompt templates in routes/avatars.js.
+// Cinema-style presets — names must match STYLE_TEMPLATES on the backend
+// (backend/routes/avatars.js). The label/emoji are pure UI.
 const AI_STYLES = [
-  { id: 'cyberpunk', label: 'Cyberpunk', emoji: '🌃' },
-  { id: 'anime',     label: 'Anime 90s', emoji: '🎌' },
-  { id: 'acuarela',  label: 'Acuarela',  emoji: '🎨' },
-  { id: 'pixar',     label: 'Pixar 3D',  emoji: '🧸' },
-  { id: 'neon',      label: 'Neón',      emoji: '✨' },
-  { id: 'vapor',     label: 'Vaporwave', emoji: '🌅' },
-  { id: 'lowpoly',   label: 'Low-poly',  emoji: '💎' },
-  { id: 'oleo',      label: 'Óleo',      emoji: '🖼️' },
+  { id: 'noir',        label: 'Cine negro',   emoji: '🎩' },
+  { id: 'bladerunner', label: 'Blade Runner', emoji: '🌃' },
+  { id: 'wes',         label: 'Wes Anderson', emoji: '🟧' },
+  { id: 'western',     label: 'Western',      emoji: '🤠' },
+  { id: 'ghibli',      label: 'Ghibli',       emoji: '🌿' },
+  { id: 'scifi',       label: 'Sci-fi',       emoji: '🚀' },
+  { id: 'seventies',   label: 'Setentero',    emoji: '📽️' },
+  { id: 'tarantino',   label: 'Tarantino',    emoji: '🎬' },
 ];
 const AI_LABELS = ['Imaginando…', 'Mezclando colores…', 'Pintando píxeles…', 'Casi listo…'];
 const AI_QUOTA_KEY = 'flickpick.ai-avatar.last-gen';
@@ -686,6 +722,16 @@ function AvatarPicker({ profile, onClose, onSave }) {
   const [aiUsed, setAiUsed]       = useState(getAiUsedToday());
   // Upload state
   const [uploadUrl, setUploadUrl] = useState(null);
+  const [cropSrc, setCropSrc] = useState(null);
+  const [libraryItems, setLibraryItems] = useState(() => getLibrary(profile?.id));
+  const [pickedLibrary, setPickedLibrary] = useState(null);
+
+  useEffect(() => {
+    const refresh = () => setLibraryItems(getLibrary(profile?.id));
+    refresh();
+    const unsub = subscribeLibrary(refresh);
+    return unsub;
+  }, [profile?.id]);
   const [uploading, setUploading] = useState(false);
   const [err, setErr]             = useState('');
   const fileRef = useRef(null);
@@ -717,24 +763,33 @@ function AvatarPicker({ profile, onClose, onSave }) {
 
   const pickFile = () => fileRef.current?.click();
 
-  const onFileChange = async (e) => {
+  const onFileChange = (e) => {
     const file = e.target.files?.[0];
+    // Reset the input so picking the same file again still fires onChange
+    if (e.target) e.target.value = '';
     if (!file) return;
     setErr('');
-
-    const localUrl = URL.createObjectURL(file);
-    setUploadUrl(localUrl);
-
-    setUploading(true);
-    try {
-      const dataUrl = await uploadAvatar(file, profile.id);
-      setUploadUrl(dataUrl);
-      URL.revokeObjectURL(localUrl);
-    } catch (e2) {
-      setErr(e2.message || 'Error al procesar la imagen.');
-    } finally {
-      setUploading(false);
+    if (!/^image\//.test(file.type)) {
+      setErr('El archivo debe ser una imagen.');
+      return;
     }
+    if (file.size > 8 * 1024 * 1024) {
+      setErr('La imagen es demasiado grande (máx 8 MB).');
+      return;
+    }
+    const localUrl = URL.createObjectURL(file);
+    setCropSrc(localUrl);
+  };
+
+  const handleCropConfirm = (dataUrl) => {
+    if (cropSrc) { try { URL.revokeObjectURL(cropSrc); } catch {} }
+    setCropSrc(null);
+    setUploadUrl(dataUrl);
+  };
+
+  const handleCropCancel = () => {
+    if (cropSrc) { try { URL.revokeObjectURL(cropSrc); } catch {} }
+    setCropSrc(null);
   };
 
   // Real AI generation — calls /api/avatars/generate which proxies to
@@ -810,13 +865,21 @@ function AvatarPicker({ profile, onClose, onSave }) {
 
   // Preview source: aurora while generating, AI result if done, fallback to current
   const showAurora = generating;
-  const previewImg = mode === 'upload'
-    ? (uploadUrl || profile.avatarUrl || defaultAvatarForName(profile.name))
-    : (aiResult || profile.avatarUrl || defaultAvatarForName(profile.name));
+  const previewImg = mode === 'mine'
+    ? (pickedLibrary?.url || profile.avatarUrl || defaultAvatarForName(profile.name))
+    : mode === 'upload'
+      ? (uploadUrl || profile.avatarUrl || defaultAvatarForName(profile.name))
+      : (aiResult || profile.avatarUrl || defaultAvatarForName(profile.name));
 
   const save = () => {
+    if (mode === 'mine') {
+      if (!pickedLibrary) { setErr('Selecciona un avatar de tu galería.'); return; }
+      onSave({ avatarUrl: pickedLibrary.url, avatarType: pickedLibrary.type || 'upload', avatarStyle: pickedLibrary.style || aiStyle });
+      return;
+    }
     if (mode === 'ai') {
       if (!aiResult) { setErr('Genera un avatar primero.'); return; }
+      try { if (profile?.id) addToLibrary(profile.id, { type: 'ai', url: aiResult, style: aiStyle }); } catch {}
       onSave({ avatarUrl: aiResult, avatarType: 'ai', avatarStyle: aiStyle });
     } else {
       if (!uploadUrl) { setErr('Selecciona una imagen primero.'); return; }
@@ -824,11 +887,20 @@ function AvatarPicker({ profile, onClose, onSave }) {
         setErr('Espera a que termine el procesado.');
         return;
       }
+      try { if (profile?.id) addToLibrary(profile.id, { type: 'upload', url: uploadUrl }); } catch {}
       onSave({ avatarUrl: uploadUrl, avatarType: 'upload' });
     }
   };
 
   return (
+    <>
+    {cropSrc && (
+      <AvatarCropSheet
+        imageSrc={cropSrc}
+        onCancel={handleCropCancel}
+        onConfirm={handleCropConfirm}
+      />
+    )}
     <div
       onClick={onClose}
       style={{
@@ -846,7 +918,7 @@ function AvatarPicker({ profile, onClose, onSave }) {
           border: '1px solid rgba(255,255,255,0.08)',
           maxHeight: '92vh', overflowY: 'auto',
           animation: 'fp-slide-up 0.3s cubic-bezier(0.2,0.8,0.3,1)',
-          padding: '18px 22px 28px',
+          padding: '18px 22px var(--fp-sheet-bottom)',
         }}
       >
         {/* Handle */}
@@ -914,8 +986,9 @@ function AvatarPicker({ profile, onClose, onSave }) {
           marginBottom: 18,
         }}>
           {[
-            { id: 'ai',     label: 'Generar IA', emoji: '✨' },
-            { id: 'upload', label: 'Subir foto', emoji: '📷' },
+            { id: 'ai',     label: 'Generar IA',  emoji: '✨' },
+            { id: 'upload', label: 'Subir foto',  emoji: '📷' },
+            { id: 'mine',   label: 'Mis avatares', emoji: '🎞️' },
           ].map(t => (
             <button key={t.id} onClick={() => { setMode(t.id); setErr(''); }} style={{
               flex: 1, padding: '10px 8px', borderRadius: 11,
@@ -930,7 +1003,55 @@ function AvatarPicker({ profile, onClose, onSave }) {
         </div>
 
         {/* Content */}
-        {mode === 'ai' ? (
+        {mode === 'mine' ? (
+          <div style={{ marginBottom: 20 }}>
+            {libraryItems.length === 0 ? (
+              <div style={{
+                padding: '32px 16px', borderRadius: 16,
+                background: 'rgba(255,255,255,0.03)',
+                border: '1.5px dashed rgba(255,255,255,0.12)',
+                textAlign: 'center', color: FP.textDim,
+              }}>
+                <div style={{ fontSize: 30, marginBottom: 10 }}>🎞️</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: FP.text, marginBottom: 4 }}>
+                  Tu galería está vacía
+                </div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                  Genera un avatar con IA o sube una foto y guárdalo para tenerlo a mano cuando quieras volver a usarlo.
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: FP.textDim, marginBottom: 12 }}>
+                  Toca un avatar para previsualizar. Mantén pulsado para borrar.
+                </div>
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10,
+                }}>
+                  {libraryItems.map((it) => {
+                    const isActive = profile?.avatarUrl === it.url;
+                    const isPicked = pickedLibrary?.id === it.id;
+                    return (
+                      <LibraryThumb
+                        key={it.id}
+                        item={it}
+                        active={isActive}
+                        picked={isPicked}
+                        onPick={() => setPickedLibrary(it)}
+                        onRemove={() => {
+                          if (!profile?.id) return;
+                          if (!window.confirm('¿Borrar este avatar de tu galería?')) return;
+                          removeFromLibrary(profile.id, it.id);
+                          if (pickedLibrary?.id === it.id) setPickedLibrary(null);
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        ) : mode === 'ai' ? (
           <div style={{ marginBottom: 20 }}>
             {/* Quota pill */}
             <div style={{
@@ -1124,6 +1245,7 @@ function AvatarPicker({ profile, onClose, onSave }) {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
@@ -1176,6 +1298,84 @@ function SettingRow({ icon, label, onClick, hideChevron, right }) {
         </svg>
       )}
     </button>
+  );
+}
+
+function LibraryThumb({ item, active, picked, onPick, onRemove }) {
+  const pressTimer = useRef(null);
+  const triggered = useRef(false);
+
+  const handleDown = () => {
+    triggered.current = false;
+    pressTimer.current = setTimeout(() => {
+      triggered.current = true;
+      onRemove?.();
+    }, 600);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+  const handleUp = () => {
+    if (!triggered.current) onPick?.();
+    cancelPress();
+  };
+
+  const ringColor = picked
+    ? '#FF3B6B'
+    : active
+      ? '#4EFFD6'
+      : 'rgba(255,255,255,0.10)';
+  const ringWidth = picked || active ? 2.5 : 1.5;
+
+  return (
+    <div
+      onPointerDown={handleDown}
+      onPointerUp={handleUp}
+      onPointerLeave={cancelPress}
+      onPointerCancel={cancelPress}
+      style={{
+        position: 'relative', aspectRatio: '1 / 1',
+        borderRadius: 999, overflow: 'hidden',
+        border: `${ringWidth}px solid ${ringColor}`,
+        background: '#0A070F',
+        cursor: 'pointer',
+        userSelect: 'none', touchAction: 'manipulation',
+        transition: 'border-color 0.18s, transform 0.12s',
+        transform: picked ? 'scale(0.96)' : 'scale(1)',
+      }}
+    >
+      <img
+        src={item.url}
+        alt={item.style || item.type}
+        draggable={false}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+      />
+      {/* Badge: AI style or upload icon */}
+      <div style={{
+        position: 'absolute', bottom: 4, right: 4,
+        padding: '2px 7px', borderRadius: 999,
+        background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)',
+        fontSize: 9, fontWeight: 800, color: '#fff',
+        letterSpacing: 0.6, textTransform: 'uppercase',
+        lineHeight: 1.4, pointerEvents: 'none',
+      }}>
+        {item.type === 'ai' ? (item.style || 'IA') : 'Foto'}
+      </div>
+      {active && (
+        <div style={{
+          position: 'absolute', top: 4, left: 4,
+          width: 18, height: 18, borderRadius: 999,
+          background: '#4EFFD6', color: '#003522',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 10, fontWeight: 900,
+          boxShadow: '0 0 8px rgba(78,255,214,0.6)',
+          pointerEvents: 'none',
+        }}>✓</div>
+      )}
+    </div>
   );
 }
 

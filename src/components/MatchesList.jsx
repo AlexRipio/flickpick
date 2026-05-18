@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { AmbientBackdrop, BackButton } from '@/components/fp/primitives';
 import { FP, memberColor } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
-import { getRoom, subscribe, removeMatch, hydrateRoomById } from '@/lib/roomStore';
+import { getRoom, subscribe, removeMatch, hydrateRoomById, markMatchesSeen } from '@/lib/roomStore';
 import { posterUrl } from '@/lib/tmdb';
 import { isInWatchlist, toggleWatchlist } from '@/lib/watchlist';
 import DetailSheet from '@/components/DetailSheet';
@@ -29,6 +29,17 @@ const MatchesList = () => {
   }, [roomId]);
 
   const matches = useMemo(() => (room?.matches || []).slice().reverse(), [room]);
+
+  // Mark matches as seen by the current user when this view is opened.
+  // Clears the per-match unseen flag (used by App Badging) so the PWA
+  // icon counter drops as the user actually views their matches.
+  useEffect(() => {
+    if (!room?.id || !profile?.id) return;
+    const changed = markMatchesSeen(room.id, profile.id);
+    if (changed) {
+      import('@/lib/badging').then(({ recomputeBadge }) => recomputeBadge(profile.id)).catch(() => {});
+    }
+  }, [room?.id, profile?.id, matches.length]);
 
   if (loading) {
     return (

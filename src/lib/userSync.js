@@ -29,9 +29,10 @@ const KEYS = {
 };
 
 const PER_USER_KEYS = {
-  avatar:      (id) => `flickpick.avatar.v1.${id}`,
-  onboarding:  (id) => `flickpick.onboarding.seen.${id}`,
-  updatesSeen: (id) => `flickpick.updates.lastSeen.${id}`,
+  avatar:        (id) => `flickpick.avatar.v1.${id}`,
+  avatarLibrary: (id) => `flickpick.avatarLibrary.v1.${id}`,
+  onboarding:    (id) => `flickpick.onboarding.seen.${id}`,
+  updatesSeen:   (id) => `flickpick.updates.lastSeen.${id}`,
 };
 
 // ── Server I/O ───────────────────────────────────────────────────────
@@ -154,6 +155,11 @@ export function applyServerSettings(profileId, data) {
     writeIfPresent(PER_USER_KEYS.avatar(profileId), data.avatar);
   }
 
+  // Avatar library (personal collection of generated/uploaded avatars)
+  if (Array.isArray(data.avatarLibrary) && profileId) {
+    writeIfPresent(PER_USER_KEYS.avatarLibrary(profileId), data.avatarLibrary);
+  }
+
   // Watchlist / Watched
   if (Array.isArray(data.watchlist))      writeIfPresent(KEYS.watchlist, data.watchlist);
   if (Array.isArray(data.watched))        writeIfPresent(KEYS.watched, data.watched);
@@ -186,6 +192,10 @@ export function pushLocalSnapshot(profileId) {
     try {
       const a = JSON.parse(localStorage.getItem(PER_USER_KEYS.avatar(profileId)) || 'null');
       if (a) patch.avatar = a;
+    } catch {}
+    try {
+      const lib = JSON.parse(localStorage.getItem(PER_USER_KEYS.avatarLibrary(profileId)) || 'null');
+      if (Array.isArray(lib) && lib.length) patch.avatarLibrary = lib;
     } catch {}
   }
   // Lists
@@ -360,6 +370,7 @@ export function installVisibilityRefresh(profileId) {
 // ── Field-level helpers used by writers ─────────────────────────────
 export const userSync = {
   avatar(value)        { pushUserSettings({ avatar: value }); },
+  avatarLibrary(arr)   { pushUserSettings({ avatarLibrary: arr }); },
   watchlist(arr)       { pushUserSettings({ watchlist: arr }); },
   watched(arr)         { pushUserSettings({ watched: arr }); },
   onboardingSeen(v=true){ pushUserSettings({ onboardingSeen: !!v }); },

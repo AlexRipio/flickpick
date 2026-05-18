@@ -88,7 +88,7 @@ export default function WatchlistScreen() {
       {/* Content */}
       <div className="no-scrollbar" style={{
         position: 'relative', zIndex: 2, flex: 1, overflowY: 'auto',
-        padding: '0 24px 48px', maxWidth: 520, width: '100%', margin: '0 auto',
+        padding: '0 24px var(--fp-content-bottom)', maxWidth: 520, width: '100%', margin: '0 auto',
       }}>
         {/* Title */}
         <h1 style={{

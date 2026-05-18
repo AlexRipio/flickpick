@@ -278,6 +278,57 @@ export function getRoomWatchedIds(room) {
   return new Set(room.watchedMovies.map(m => Number(m.id)));
 }
 
+/**
+ * Mark every match in this room as seen by `profileId` (adds the id to
+ * each match.seenBy[]). Idempotent — already-seen matches are skipped.
+ * Returns true if any write occurred (so the caller can decide whether
+ * to recompute the badge).
+ */
+export function markMatchesSeen(roomId, profileId) {
+  if (!profileId) return false;
+  const room = getRoom(roomId);
+  if (!room || !Array.isArray(room.matches) || room.matches.length === 0) return false;
+  let mutated = false;
+  const next = room.matches.map((m) => {
+    if (!m) return m;
+    const seen = Array.isArray(m.seenBy) ? m.seenBy : [];
+    if (seen.includes(profileId)) return m;
+    mutated = true;
+    return { ...m, seenBy: [...seen, profileId] };
+  });
+  if (!mutated) return false;
+  room.matches = next;
+  saveRoom(room);
+  return true;
+}
+
+/**
+ * Mark every match across every room the user is in as seen. Used by
+ * the "Marcar notificaciones como vistas" action in ProfileScreen to
+ * wipe a stale badge in one shot.
+ */
+export function markAllMatchesSeen(profileId) {
+  if (!profileId) return 0;
+  const all = readAll();
+  let touched = 0;
+  for (const r of Object.values(all)) {
+    if (!r || !Array.isArray(r.matches) || r.matches.length === 0) continue;
+    const isMember = r.members?.some((m) => m.id === profileId);
+    const isOwner  = r.ownerId === profileId;
+    if (!isMember && !isOwner) continue;
+    let mutated = false;
+    r.matches = r.matches.map((m) => {
+      if (!m) return m;
+      const seen = Array.isArray(m.seenBy) ? m.seenBy : [];
+      if (seen.includes(profileId)) return m;
+      mutated = true;
+      return { ...m, seenBy: [...seen, profileId] };
+    });
+    if (mutated) { saveRoom(r); touched += 1; }
+  }
+  return touched;
+}
+
 export function removeMatch(roomId, movieId) {
   const room = getRoom(roomId);
   if (!room) return;

@@ -174,6 +174,17 @@ const MovieSwiper = () => {
     hydrate();
   }, [roomId, profile?.id]);
 
+  // Safety net: if the room never resolves (hydrate failed, network
+  // blackhole, corrupted localStorage…) bail back to /home after 8s
+  // instead of leaving the user stuck on "Cargando…" forever.
+  useEffect(() => {
+    if (room) return;
+    const t = setTimeout(() => {
+      if (!getRoom(roomId)) navigate('/home', { replace: true });
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [room, roomId, navigate]);
+
   const loadPool = useCallback(async () => {
     if (!room || fetchedRef.current) return;
     fetchedRef.current = true;

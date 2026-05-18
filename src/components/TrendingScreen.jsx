@@ -738,6 +738,7 @@ export default function TrendingScreen() {
       <div className="no-scrollbar" style={{
         position: 'relative', zIndex: 2, flex: 1, overflowY: 'auto',
         maxWidth: 520, width: '100%', margin: '0 auto',
+        paddingBottom: 'var(--fp-content-bottom)',
       }}>
 
         {/* Title */}
