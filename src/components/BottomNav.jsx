@@ -4,18 +4,33 @@ import { isStandalone } from '@/lib/installApp';
 import { useProfile } from '@/contexts/ProfileContext';
 
 // Pure helper: looks up the user's most recent non-ended room from
-// localStorage. Returns null if none. Used to gate the "Crear" FAB
-// in PWA mode with a confirmation dialog.
+// localStorage that has had activity in the last 6h. Returns null if
+// none. Used to gate the "Crear" FAB in PWA mode with a confirmation
+// dialog.
+//
+// Mirrors the HomeScreen "active room" rule exactly — without the 6h
+// window, abandoned lobbies the user forgot to close would forever
+// block FAB creation while being invisible in Home (which IS gated by
+// the same window). The two views must agree.
+const ACTIVE_WINDOW_MS = 6 * 60 * 60 * 1000;
+function lastTouchedAt(r) {
+  const t = r.updatedAt || r.lastMatchAt || r.createdAt || 0;
+  if (typeof t === 'string') return Date.parse(t) || 0;
+  return t || 0;
+}
 function findActiveRoomForUser(profileId) {
   if (!profileId) return null;
   try {
     const all = JSON.parse(localStorage.getItem('flickpick.rooms.v1') || '{}');
+    const cutoff = Date.now() - ACTIVE_WINDOW_MS;
     let active = null;
     for (const r of Object.values(all)) {
       if (!r || r.status === 'ended') continue;
-      if (r.members?.some((m) => m.id === profileId)) {
-        if (!active || (r.createdAt || 0) > (active.createdAt || 0)) active = r;
-      }
+      if (lastTouchedAt(r) < cutoff) continue;
+      const isMember = r.members?.some((m) => m.id === profileId);
+      const isOwner  = r.ownerId === profileId;
+      if (!isMember && !isOwner) continue;
+      if (!active || lastTouchedAt(r) > lastTouchedAt(active)) active = r;
     }
     return active;
   } catch {
