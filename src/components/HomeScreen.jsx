@@ -114,11 +114,11 @@ const HomeScreen = () => {
     for (const r of Object.values(all)) {
       if (!r) continue;
       if (!profile?.id) continue;
+      if (dismissedIds.has(r.id)) continue;
       const isMember = r.members?.some(m => m.id === profile.id);
       const isOwner  = r.ownerId === profile.id;
       if (!isMember && !isOwner) continue;
       mine.push(r);
-      if (dismissedIds.has(r.id)) continue;
       if (r.status !== 'ended' && lastTouchedAt(r) >= cutoff) {
         if (!active || lastTouchedAt(r) > lastTouchedAt(active)) active = r;
       }

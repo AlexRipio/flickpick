@@ -226,6 +226,38 @@ export function closeRoom(roomId) {
   return saveRoom(room);
 }
 
+/**
+ * Permanently delete a room from this device's localStorage. Used by
+ * the "Editar / Borrar" multi-select cleanup in MatchesHistory. The
+ * room may still exist on the server (other members can keep using
+ * it); we only purge the local copy so it stops showing in history.
+ * Also pushes the id to the dismissedRooms set so cross-device sync
+ * doesn't bring it back on the next refresh.
+ */
+export function deleteRoom(roomId) {
+  if (!roomId) return;
+  const all = readAll();
+  const room = all[roomId];
+  if (room) {
+    delete all[roomId];
+    writeAll(all);
+    if (room.joinCode) {
+      const codes = readCodes();
+      if (codes[room.joinCode] === roomId) {
+        delete codes[room.joinCode];
+        writeCodes(codes);
+      }
+    }
+  }
+  try {
+    const raw = JSON.parse(localStorage.getItem('flickpick.dismissedRooms.v1') || '[]');
+    const set = new Set(Array.isArray(raw) ? raw : []);
+    set.add(roomId);
+    localStorage.setItem('flickpick.dismissedRooms.v1', JSON.stringify([...set]));
+  } catch {}
+  broadcast(roomId);
+}
+
 export function recordVote(roomId, memberId, movie, vote) {
   const room = getRoom(roomId);
   if (!room) throw new Error("Sala no encontrada");

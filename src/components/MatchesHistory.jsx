@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AmbientBackdrop, BackButton } from '@/components/fp/primitives';
 import { FP, memberColor } from '@/lib/fp';
 import { useProfile } from '@/contexts/ProfileContext';
-import { subscribe } from '@/lib/roomStore';
+import { subscribe, deleteRoom } from '@/lib/roomStore';
 import { posterUrl } from '@/lib/tmdb';
 
 function readAllRooms() {
@@ -14,6 +14,8 @@ const MatchesHistory = () => {
   const navigate       = useNavigate();
   const { profile }    = useProfile();
   const [tick, setTick] = useState(0);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
 
   useEffect(() => {
     const unsub = subscribe(() => setTick(t => t + 1));
@@ -22,12 +24,47 @@ const MatchesHistory = () => {
     return () => { unsub?.(); window.removeEventListener('storage', onStorage); };
   }, []);
 
+  const toggleOne = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelected(new Set());
+  };
+  const deleteSelected = () => {
+    if (selected.size === 0) return;
+    const n = selected.size;
+    const ok = window.confirm(
+      n === 1
+        ? '¿Borrar esta sala del historial? Se quitará solo de tu dispositivo.'
+        : `¿Borrar ${n} salas del historial? Se quitarán solo de tu dispositivo.`
+    );
+    if (!ok) return;
+    for (const id of selected) {
+      try { deleteRoom(id); } catch {}
+    }
+    exitSelectMode();
+  };
+
   const myRooms = useMemo(() => {
     const all = readAllRooms();
     const mine = [];
+    // Rooms the user has explicitly deleted via the multi-select edit
+    // mode. Persist locally so cross-device sync can't resurrect them.
+    let dismissed = new Set();
+    try {
+      const raw = JSON.parse(localStorage.getItem('flickpick.dismissedRooms.v1') || '[]');
+      if (Array.isArray(raw)) dismissed = new Set(raw);
+    } catch {}
     for (const r of Object.values(all)) {
       if (!r) continue;
       if (!profile?.id) continue;
+      if (dismissed.has(r.id)) continue;
       // Include rooms where the user is a member OR the owner —
       // mirrors the server-side filter in /api/rooms/mine. Some rooms
       // may have been created before the user logged in (members has
@@ -52,9 +89,52 @@ const MatchesHistory = () => {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '16px 20px', maxWidth: 520, width: '100%', margin: '0 auto',
       }}>
-        <BackButton onClick={() => navigate('/home')}/>
-        <div style={{ fontSize: 13, fontWeight: 600, color: FP.textDim }}>Historial</div>
-        <div style={{ width: 42 }}/>
+        {selectMode ? (
+          <button onClick={exitSelectMode} style={{
+            background: 'transparent', border: 'none', color: '#fff',
+            fontWeight: 700, fontSize: 14, cursor: 'pointer', padding: '6px 10px',
+            fontFamily: '"Space Grotesk", system-ui',
+          }}>Cancelar</button>
+        ) : (
+          <BackButton onClick={() => navigate('/home')}/>
+        )}
+        <div style={{ fontSize: 13, fontWeight: 600, color: FP.textDim }}>
+          {selectMode ? `${selected.size} seleccionada${selected.size === 1 ? '' : 's'}` : 'Historial'}
+        </div>
+        {myRooms.length > 0 ? (
+          selectMode ? (
+            <button
+              onClick={deleteSelected}
+              disabled={selected.size === 0}
+              style={{
+                background: selected.size === 0 ? 'rgba(255,75,75,0.18)' : 'linear-gradient(135deg, #FF3B6B, #B0182E)',
+                border: 'none', color: '#fff',
+                fontWeight: 800, fontSize: 13, padding: '8px 14px',
+                borderRadius: 999,
+                cursor: selected.size === 0 ? 'default' : 'pointer',
+                fontFamily: '"Space Grotesk", system-ui',
+                opacity: selected.size === 0 ? 0.55 : 1,
+                boxShadow: selected.size === 0 ? 'none' : '0 8px 18px rgba(255,59,107,0.35)',
+              }}
+            >
+              Borrar{selected.size > 0 ? ` (${selected.size})` : ''}
+            </button>
+          ) : (
+            <button
+              onClick={() => setSelectMode(true)}
+              style={{
+                background: 'transparent', border: 'none',
+                color: FP.textDim,
+                fontWeight: 700, fontSize: 13, cursor: 'pointer', padding: '6px 10px',
+                fontFamily: '"Space Grotesk", system-ui',
+              }}
+            >
+              Editar
+            </button>
+          )
+        ) : (
+          <div style={{ width: 42 }}/>
+        )}
       </div>
 
       {/* Content */}
@@ -88,17 +168,26 @@ const MatchesHistory = () => {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {myRooms.map(r => (
-              <RoomCard key={r.id} room={r} onOpen={() => navigate(`/room/${r.id}/matches`)} onResume={() => navigate(r.status === 'lobby' ? `/room/${r.id}/lobby` : `/room/${r.id}`)}/>
+              <RoomCard
+                key={r.id}
+                room={r}
+                selectMode={selectMode}
+                isSelected={selected.has(r.id)}
+                onToggleSelect={() => toggleOne(r.id)}
+                onOpen={() => navigate(`/room/${r.id}/matches`)}
+                onResume={() => navigate(r.status === 'lobby' ? `/room/${r.id}/lobby` : `/room/${r.id}`)}
+              />
             ))}
           </div>
         )}
       </div>
+
     </div>
   );
 };
 
 // ── Room card ─────────────────────────────────────────────────────────────────
-function RoomCard({ room, onOpen, onResume }) {
+function RoomCard({ room, onOpen, onResume, selectMode, isSelected, onToggleSelect }) {
   const matches     = room.matches || [];
   const matchCount  = matches.length;
   const statusLabel = room.status === 'ended' ? 'Finalizada' : room.status === 'live' ? 'En curso' : 'Lobby';
@@ -112,11 +201,35 @@ function RoomCard({ room, onOpen, onResume }) {
     : '';
 
   return (
-    <div style={{
-      borderRadius: 22, overflow: 'hidden',
-      background: 'rgba(255,255,255,0.04)',
-      border: '1px solid rgba(255,255,255,0.08)',
-    }}>
+    <div
+      onClick={selectMode ? onToggleSelect : undefined}
+      style={{
+        position: 'relative',
+        borderRadius: 22, overflow: 'hidden',
+        background: isSelected ? 'rgba(255,59,107,0.10)' : 'rgba(255,255,255,0.04)',
+        border: isSelected ? '1px solid rgba(255,59,107,0.55)' : '1px solid rgba(255,255,255,0.08)',
+        cursor: selectMode ? 'pointer' : 'default',
+        userSelect: 'none',
+        transition: 'background 0.18s, border-color 0.18s',
+      }}
+    >
+      {selectMode && (
+        <div style={{
+          position: 'absolute', top: 12, right: 12, zIndex: 3,
+          width: 26, height: 26, borderRadius: 999,
+          background: isSelected ? 'linear-gradient(135deg, #FF6B4A, #FF3B6B)' : 'rgba(0,0,0,0.45)',
+          border: isSelected ? 'none' : '1.5px solid rgba(255,255,255,0.35)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: isSelected ? '0 4px 14px rgba(255,59,107,0.45)' : 'none',
+          pointerEvents: 'none',
+        }}>
+          {isSelected && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <path d="M5 12l5 5 9-11" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          )}
+        </div>
+      )}
       {/* Header row */}
       <div style={{ padding: '16px 18px 14px', display: 'flex', alignItems: 'flex-start', gap: 14 }}>
         {/* Count badge */}
@@ -212,28 +325,30 @@ function RoomCard({ room, onOpen, onResume }) {
         </div>
       )}
 
-      {/* Action buttons */}
-      <div style={{
-        display: 'flex', gap: 8, padding: '0 14px 14px',
-      }}>
-        <button onClick={onOpen} style={{
-          flex: 1, height: 42, borderRadius: 999, cursor: 'pointer',
-          background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
-          color: FP.text, fontWeight: 700, fontSize: 13,
+      {/* Action buttons (hidden during multi-select) */}
+      {!selectMode && (
+        <div style={{
+          display: 'flex', gap: 8, padding: '0 14px 14px',
         }}>
-          Ver matches
-        </button>
-        {canResume && (
-          <button onClick={onResume} style={{
+          <button onClick={onOpen} style={{
             flex: 1, height: 42, borderRadius: 999, cursor: 'pointer',
-            background: FP.flame, border: 'none',
-            color: '#fff', fontWeight: 700, fontSize: 13,
-            boxShadow: '0 6px 18px rgba(255,59,107,0.3)',
+            background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
+            color: FP.text, fontWeight: 700, fontSize: 13,
           }}>
-            Continuar →
+            Ver matches
           </button>
-        )}
-      </div>
+          {canResume && (
+            <button onClick={onResume} style={{
+              flex: 1, height: 42, borderRadius: 999, cursor: 'pointer',
+              background: FP.flame, border: 'none',
+              color: '#fff', fontWeight: 700, fontSize: 13,
+              boxShadow: '0 6px 18px rgba(255,59,107,0.3)',
+            }}>
+              Continuar →
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

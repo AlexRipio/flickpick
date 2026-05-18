@@ -2,6 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { isStandalone } from '@/lib/installApp';
 import { useProfile } from '@/contexts/ProfileContext';
+import { findActiveRoomForUser as sharedFindActive, pathForRoom } from '@/lib/activeRoom';
+import { closeRoom } from '@/lib/roomStore';
+import ActiveRoomDialog from '@/components/ActiveRoomDialog';
 
 // Pure helper: looks up the user's most recent non-ended room from
 // localStorage that has had activity in the last 6h. Returns null if
@@ -214,6 +217,7 @@ function BottomNav({ active: activeProp, onChange }) {
   const [fabHover, setFabHover] = useState(false);
   const [pressKey, setPressKey] = useState(0); // re-trigger keyframe on each press
   const [confirmCreateOpen, setConfirmCreateOpen] = useState(false);
+  const [pendingActiveRoom, setPendingActiveRoom] = useState(null);
 
   // Detect installed-PWA mode (display-mode: standalone, or iOS navigator.standalone).
   // When standalone, the bar extends edge-to-edge to fill the home-indicator
@@ -244,12 +248,12 @@ function BottomNav({ active: activeProp, onChange }) {
   }, [activeProp, location.pathname]);
 
   const handleChange = (id) => {
-    // PWA-only: tapping the Crear FAB while in an active room would
-    // silently navigate away. Intercept and confirm first.
-    if (id === 'crear' && standalone) {
-      const active = findActiveRoomForUser(profile?.id);
+    // Tapping the Crear FAB while in an active room would silently
+    // navigate away from it. Surface the dialog in every mode.
+    if (id === 'crear') {
+      const active = sharedFindActive(profile?.id);
       if (active) {
-        setConfirmCreateOpen(true);
+        setPendingActiveRoom(active);
         return;
       }
     }
@@ -262,9 +266,16 @@ function BottomNav({ active: activeProp, onChange }) {
   };
 
   const proceedCreate = () => {
-    setConfirmCreateOpen(false);
+    if (pendingActiveRoom) {
+      try { closeRoom(pendingActiveRoom.id); } catch {}
+    }
+    setPendingActiveRoom(null);
     if (onChange) onChange('crear');
     else navigate(ROUTE_BY_ID.crear);
+  };
+  const returnToActive = () => {
+    if (pendingActiveRoom) navigate(pathForRoom(pendingActiveRoom));
+    setPendingActiveRoom(null);
   };
 
   const isCreate = active === 'crear';
@@ -620,6 +631,16 @@ function BottomNav({ active: activeProp, onChange }) {
             </div>
           </div>
         </div>
+      )}
+
+      {pendingActiveRoom && (
+        <ActiveRoomDialog
+          room={pendingActiveRoom}
+          intent="create"
+          onReturn={returnToActive}
+          onConfirm={proceedCreate}
+          onCancel={() => setPendingActiveRoom(null)}
+        />
       )}
     </nav>
   );
