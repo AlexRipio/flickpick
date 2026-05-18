@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 
 /* Botón flotante "subir arriba" que aparece cuando el usuario ha bajado
    mucho en CUALQUIER contenedor con scroll interno (no solo window).
@@ -9,8 +10,15 @@ const SHOW_AFTER_PX = 600;
 export default function ScrollToTopButton() {
   const [visible, setVisible] = useState(false);
   const [hover, setHover] = useState(false);
+  const { pathname } = useLocation();
   // Mantenemos referencia al último contenedor que ha scrolleado para poder volver a 0 al pulsar
   const lastScrolledRef = useRef(null);
+
+  // Resetear visible y lastScrolledRef cuando cambia de ruta
+  useEffect(() => {
+    setVisible(false);
+    lastScrolledRef.current = null;
+  }, [pathname]);
 
   useEffect(() => {
     let ticking = false;
@@ -32,7 +40,8 @@ export default function ScrollToTopButton() {
 
   const scrollUp = () => {
     const el = lastScrolledRef.current;
-    if (el && typeof el.scrollTo === 'function') {
+    // Verificar que el elemento todavía existe en el DOM
+    if (el && document.contains(el) && typeof el.scrollTo === 'function') {
       el.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       window.scrollTo({ top: 0, behavior: 'smooth' });
