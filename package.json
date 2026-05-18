@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite --host ::",
     "build": "vite build",
-    "preview": "vite preview --host :: --port 3000"
+    "preview": "vite preview --host :: --port 3000",
+    "deploy:qa": "bash scripts/deploy.sh qa",
+    "deploy:pro": "bash scripts/deploy.sh pro",
+    "deploy:qa:dry": "bash scripts/deploy.sh qa --dry-run",
+    "deploy:pro:dry": "bash scripts/deploy.sh pro --dry-run"
   },
   "dependencies": {
     "@emotion/is-prop-valid": "^1.2.1",
