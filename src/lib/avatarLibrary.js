@@ -10,11 +10,33 @@
  * Each item:
  *   { id, type: 'ai'|'upload', url, style?, createdAt }
  *
- * Cap: 10 items. Oldest is dropped on add (FIFO).
+ * Caps per type — the user MUST remove one to add another:
+ *   - upload (foto subida): 1
+ *   - ai (avatares IA):     4
+ *
+ * Hard caps (not FIFO) so the user controls what stays. Trying to add
+ * past the limit throws an Error with .code = 'LIBRARY_FULL'.
  */
 
 const KEY = (userId) => `flickpick.avatarLibrary.v1.${userId}`;
-const MAX_ITEMS = 10;
+export const MAX_UPLOAD = 1;
+export const MAX_AI = 4;
+
+export function countByType(list) {
+  const out = { upload: 0, ai: 0 };
+  for (const a of (Array.isArray(list) ? list : [])) {
+    if (a?.type === 'upload') out.upload += 1;
+    else if (a?.type === 'ai') out.ai += 1;
+  }
+  return out;
+}
+
+export function canAddToLibrary(userId, type) {
+  const list = safeRead(userId);
+  const counts = countByType(list);
+  if (type === 'upload') return counts.upload < MAX_UPLOAD;
+  return counts.ai < MAX_AI;
+}
 
 function safeRead(userId) {
   if (!userId) return [];
@@ -45,23 +67,39 @@ export function getLibrary(userId) {
 }
 
 /**
- * Add an avatar to the library. Deduplicates by URL — if the same image
- * is already in the library, returns the existing entry without growing
- * the list. Otherwise prepends and trims to MAX_ITEMS.
+ * Add an avatar to the library.
+ *  - Deduplicates by URL: if the same image is already saved, returns
+ *    the existing entry (no error).
+ *  - Enforces per-type caps. If full, throws Error with code 'LIBRARY_FULL'
+ *    so the caller can surface a clear message and refuse the save.
  */
 export function addToLibrary(userId, { type, url, style }) {
   if (!userId || !url) return null;
   const list = safeRead(userId);
   const existing = list.find((a) => a.url === url);
   if (existing) return existing;
+
+  const kind = type === 'upload' ? 'upload' : 'ai';
+  const counts = countByType(list);
+  const limit  = kind === 'upload' ? MAX_UPLOAD : MAX_AI;
+  if (counts[kind] >= limit) {
+    const message = kind === 'upload'
+      ? 'Solo puedes guardar 1 foto. Borra la actual antes de subir otra.'
+      : `Tu galería de avatares IA está llena (${MAX_AI}). Borra uno para añadir este.`;
+    const err = new Error(message);
+    err.code = 'LIBRARY_FULL';
+    err.kind = kind;
+    throw err;
+  }
+
   const item = {
     id: uuid(),
-    type: type === 'upload' ? 'upload' : 'ai',
+    type: kind,
     url,
     style: style || null,
     createdAt: Date.now(),
   };
-  const next = [item, ...list].slice(0, MAX_ITEMS);
+  const next = [item, ...list];
   safeWrite(userId, next);
   return item;
 }

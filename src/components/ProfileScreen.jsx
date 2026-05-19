@@ -6,7 +6,7 @@ import UpdatesModal from '@/components/UpdatesModal';
 import DeleteAccountSheet from '@/components/DeleteAccountSheet';
 import InstallAppSheet from '@/components/InstallAppSheet';
 import AvatarCropSheet from '@/components/AvatarCropSheet';
-import { getLibrary, subscribeLibrary, removeFromLibrary, addToLibrary } from '@/lib/avatarLibrary';
+import { getLibrary, subscribeLibrary, removeFromLibrary, addToLibrary, countByType, MAX_UPLOAD, MAX_AI } from '@/lib/avatarLibrary';
 import { isStandalone } from '@/lib/installApp';
 import haptic, { isHapticSupported, isHapticEnabled, setHapticEnabled } from '@/lib/haptic';
 import { manualSyncNow, repushLocalRooms } from '@/lib/userSync';
@@ -889,7 +889,13 @@ function AvatarPicker({ profile, onClose, onSave }) {
     }
     if (mode === 'ai') {
       if (!aiResult) { setErr('Genera un avatar primero.'); return; }
-      try { if (profile?.id) addToLibrary(profile.id, { type: 'ai', url: aiResult, style: aiStyle }); } catch {}
+      if (profile?.id) {
+        try { addToLibrary(profile.id, { type: 'ai', url: aiResult, style: aiStyle }); }
+        catch (e) {
+          if (e?.code === 'LIBRARY_FULL') { setErr(e.message); return; }
+          // Otros errores: no bloquear el save, sólo no añadir a la library.
+        }
+      }
       onSave({ avatarUrl: aiResult, avatarType: 'ai', avatarStyle: aiStyle });
     } else {
       if (!uploadUrl) { setErr('Selecciona una imagen primero.'); return; }
@@ -897,7 +903,12 @@ function AvatarPicker({ profile, onClose, onSave }) {
         setErr('Espera a que termine el procesado.');
         return;
       }
-      try { if (profile?.id) addToLibrary(profile.id, { type: 'upload', url: uploadUrl }); } catch {}
+      if (profile?.id) {
+        try { addToLibrary(profile.id, { type: 'upload', url: uploadUrl }); }
+        catch (e) {
+          if (e?.code === 'LIBRARY_FULL') { setErr(e.message); return; }
+        }
+      }
       onSave({ avatarUrl: uploadUrl, avatarType: 'upload' });
     }
   };
@@ -1032,8 +1043,19 @@ function AvatarPicker({ profile, onClose, onSave }) {
               </div>
             ) : (
               <>
-                <div style={{ fontSize: 12, color: FP.textDim, marginBottom: 12 }}>
-                  Toca un avatar para previsualizar. Mantén pulsado para borrar.
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  fontSize: 12, color: FP.textDim, marginBottom: 12, gap: 10, flexWrap: 'wrap',
+                }}>
+                  <span>Toca para previsualizar · mantén pulsado para borrar</span>
+                  {(() => {
+                    const c = countByType(libraryItems);
+                    return (
+                      <span style={{ fontVariantNumeric: 'tabular-nums', color: FP.textMuted, fontWeight: 600 }}>
+                        {c.upload}/{MAX_UPLOAD} foto · {c.ai}/{MAX_AI} IA
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div style={{
                   display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10,
