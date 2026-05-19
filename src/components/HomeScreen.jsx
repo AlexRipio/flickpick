@@ -115,7 +115,11 @@ const HomeScreen = () => {
       if (!r) continue;
       if (!profile?.id) continue;
       if (dismissedIds.has(r.id)) continue;
-      const isMember = r.members?.some(m => m.id === profile.id);
+      // Skip malformed blobs (sync race / DB row half-written). These
+      // show up as "ghost rooms" with members but no preferences/votes
+      // and crash MovieSwiper when opened.
+      if (!Array.isArray(r.members) || !r.preferences || !r.joinCode) continue;
+      const isMember = r.members.some(m => m.id === profile.id);
       const isOwner  = r.ownerId === profile.id;
       if (!isMember && !isOwner) continue;
       mine.push(r);

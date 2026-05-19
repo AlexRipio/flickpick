@@ -92,7 +92,11 @@ const MovieSwiper = () => {
   const me         = useMemo(() => room?.members.find(m => m.id === profile?.id) || null, [room, profile]);
   const isHost     = !!(room && profile && room.ownerId === profile.id);
   const votedIds   = useMemo(() => me ? getMemberVotedIds(room, me.id) : new Set(), [room, me]);
-  const lobbyTaste = useMemo(() => room ? blendTastes(room.members.map(m => m.taste)) : null, [room]);
+  const lobbyTaste = useMemo(() => {
+    if (!room) return null;
+    const members = Array.isArray(room.members) ? room.members : [];
+    return blendTastes(members.map(m => m.taste));
+  }, [room]);
 
   // ── Watched IDs (locales del usuario + compartidas en sala) ────────────────
   const [localWatchedTick, setLocalWatchedTick] = useState(0);
@@ -549,6 +553,29 @@ const MovieSwiper = () => {
     return null;
   }
 
+  // Guard against malformed / partially-synced rooms that arrive from
+  // the server with missing fields (members[], preferences, etc.).
+  // Without this the .map call on undefined crashes the component and
+  // the user just sees the ambient backdrop with nothing on top.
+  if (!Array.isArray(room.members) || !room.preferences) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, color: FP.textDim, padding: 24, textAlign: 'center' }}>
+        <AmbientBackdrop hue={280}/>
+        <div style={{ position: 'relative', zIndex: 2, maxWidth: 360 }}>
+          <div style={{ fontSize: 38, marginBottom: 8 }}>🛠</div>
+          <div style={{ fontWeight: 700, color: FP.text, fontSize: 17, marginBottom: 6 }}>Esta sala no se pudo cargar</div>
+          <div style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 18 }}>
+            Faltan datos del servidor o la sala fue creada en otro dispositivo y aún no terminó de sincronizar.
+          </div>
+          <button onClick={() => navigate('/home', { replace: true })} style={{
+            padding: '10px 22px', borderRadius: 999, border: 'none', cursor: 'pointer',
+            background: FP.flame, color: '#fff', fontWeight: 700, fontSize: 14,
+          }}>Volver al inicio</button>
+        </div>
+      </div>
+    );
+  }
+
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -662,7 +689,7 @@ const MovieSwiper = () => {
       {/* Progress — checkpoint cycle bar */}
       <ProgressBar
         swipeCount={swipeCount}
-        matchCount={room.matches.length}
+        matchCount={Array.isArray(room.matches) ? room.matches.length : 0}
         pauseAt={computePauseAt(room?.preferences?.swipeTarget)}
       />
 
