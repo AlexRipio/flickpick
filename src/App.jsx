@@ -21,6 +21,7 @@ import RoomAnalysis from '@/components/RoomAnalysis';
 import LandingPage from '@/components/LandingPage';
 import BottomNav from '@/components/BottomNav';
 import ScrollToTopButton from '@/components/ScrollToTopButton';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import CookieBanner from '@/components/CookieBanner';
 import '@/lib/tracking';
 import PrivacyPolicy from '@/components/legal/PrivacyPolicy';
@@ -112,6 +113,7 @@ function GlobalAutoSync() {
 
 function App() {
   return (
+    <ErrorBoundary>
     <ProfileProvider>
       <Helmet>
         <title>FlickPick · Swipe. Match. Watch.</title>
@@ -160,6 +162,7 @@ function App() {
       </Router>
       <Toaster />
     </ProfileProvider>
+    </ErrorBoundary>
   );
 }
 
