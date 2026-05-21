@@ -14,6 +14,15 @@ function postAuthDestination() {
 }
 
 const GOOGLE_CLIENT_ID = '480695177694-uip9jvgsh4gf7rhg03q2omskad5j1ai8.apps.googleusercontent.com';
+// iOS necesita su propio "ID de cliente OAuth (iOS)" creado en Google Cloud
+// con bundle id mov.flickpick.app. Pegar aquí el client id de iOS cuando exista
+// (formato: XXXX-XXXX.apps.googleusercontent.com). Vacío = Google solo va en Android.
+const GOOGLE_IOS_CLIENT_ID = '480695177694-c4kckc94arhgedel7mt1kndrnl11j2lj.apps.googleusercontent.com';
+
+// True when running inside the Capacitor native shell (the store app).
+// We soften GPU-heavy infinite animations there to avoid WebView flicker;
+// the web keeps the full animation.
+const IS_NATIVE = typeof window !== 'undefined' && !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
 const WelcomeScreen = () => {
   const navigate = useNavigate();
@@ -63,7 +72,42 @@ const WelcomeScreen = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  const handleGoogleClick = () => {
+  const handleGoogleClick = async () => {
+    // Native (in-app): GIS popup is blocked by Google in WebViews, so use the
+    // native Google sign-in plugin instead. Web keeps the GIS token client.
+    if (IS_NATIVE) {
+      setGError('');
+      setGLoading(true);
+      try {
+        const { SocialLogin } = await import('@capgo/capacitor-social-login');
+        const platform = window.Capacitor?.getPlatform?.();
+        const googleCfg = { webClientId: GOOGLE_CLIENT_ID };
+        if (platform === 'ios' && GOOGLE_IOS_CLIENT_ID) googleCfg.iOSClientId = GOOGLE_IOS_CLIENT_ID;
+        await SocialLogin.initialize({ google: googleCfg });
+        // No `scopes`: basic Google sign-in via Credential Manager returns
+        // name/email/photo and needs no MainActivity changes. Requesting
+        // scopes would require extra native wiring we don't need.
+        const res = await SocialLogin.login({ provider: 'google', options: {} });
+        const r = (res && res.result) || {};
+        const pr = r.profile || {};
+        const userInfo = {
+          sub: pr.id,
+          email: pr.email,
+          name: pr.name || [pr.givenName, pr.familyName].filter(Boolean).join(' '),
+          picture: pr.imageUrl || pr.picture || null,
+        };
+        const { profile } = await processGoogleUserInfo(userInfo);
+        if (profile) {
+          setProfileFields(profile);
+          navigate(postAuthDestination(), { replace: true });
+        }
+      } catch (e) {
+        setGError(e?.message || 'No se pudo iniciar sesion con Google.');
+      } finally {
+        setGLoading(false);
+      }
+      return;
+    }
     if (!tokenClientRef.current) return;
     setGError('');
     tokenClientRef.current.requestAccessToken();
@@ -90,10 +134,13 @@ const WelcomeScreen = () => {
             <div key={i} style={{
               position: 'absolute', ...p,
               width: 240, height: 340,
-              transform: `rotate(${p.rot}deg) scale(${p.scale})`,
+              transform: `rotate(${p.rot}deg) scale(${p.scale}) translateZ(0)`,
               borderRadius: 26, overflow: 'hidden',
               boxShadow: '0 30px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)',
               opacity: 0,
+              backfaceVisibility: 'hidden',
+              WebkitBackfaceVisibility: 'hidden',
+              willChange: 'transform, opacity',
               animation: `fp-poster-enter-${i} 0.9s ${0.05 + i * 0.08}s cubic-bezier(.2,.8,.3,1.1) both,
                           fp-float-${i} ${p.dur}s ${p.delay}s ease-in-out infinite`,
             }}>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FlickPick</string>
+    <string name="title_activity_main">FlickPick</string>
+    <string name="package_name">mov.flickpick.app</string>
+    <string name="custom_url_scheme">mov.flickpick.app</string>
+</resources>

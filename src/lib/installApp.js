@@ -99,6 +99,9 @@ export async function triggerInstall() {
 
 export function isStandalone() {
   if (typeof window === 'undefined') return false;
+  // Capacitor native app → treat as standalone so the bottom bar anchors
+  // (incrustada) like the installed PWA instead of floating.
+  if (window.Capacitor?.isNativePlatform?.()) return true;
   if (window.matchMedia?.('(display-mode: standalone)').matches) return true;
   if (window.navigator.standalone === true) return true; // iOS Safari
   return false;

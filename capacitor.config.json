@@ -1,0 +1,8 @@
+{
+  "appId": "mov.flickpick.app",
+  "appName": "FlickPick",
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorHttp": { "enabled": true }
+  }
+}

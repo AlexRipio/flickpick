@@ -6,6 +6,10 @@ import '@/index.css';
 // worker takes over, so deploys reach installed users without them
 // having to clear data or reinstall the PWA.
 import '@/lib/pwaUpdate';
+import { installGlobalHaptics } from '@/lib/haptics';
+
+// Native-only: light tap on every button, customizable via data-haptic.
+installGlobalHaptics();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

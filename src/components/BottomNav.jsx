@@ -473,6 +473,7 @@ function BottomNav({ active: activeProp, onChange }) {
           onMouseEnter={() => setFabHover(true)}
           onMouseLeave={() => setFabHover(false)}
           aria-label="Crear sala"
+          data-haptic="heavy"
           aria-current={isCreate ? 'page' : undefined}
           className={`group absolute left-1/2 rounded-full flex items-center justify-center
                      focus-visible:ring-4 focus-visible:ring-white/30 outline-none

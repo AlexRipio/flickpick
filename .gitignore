@@ -4,3 +4,9 @@ dist/
 .env
 
 .vercel
+
+# temp/junk
+_s.png
+_fpshot.png
+dist-check/
+*.apk
