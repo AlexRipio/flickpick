@@ -1,0 +1,66 @@
+name: DB Backup
+
+# Copia de seguridad diaria de la base de datos de FlickPick.
+# - Se ejecuta sola cada día (cron) y también se puede lanzar a mano.
+# - Guarda la copia como "artifact" durante 90 días (rotación automática).
+# - Hace un pequeño commit "keep-alive" para que GitHub NO pause el robot
+#   aunque el repo esté aparcado (GitHub desactiva los cron tras 60 días sin
+#   actividad; este commit cuenta como actividad).
+#
+# Requiere un secreto del repo: DATABASE_URL  (cadena de conexión postgresql://...)
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # cada día a las 03:00 UTC
+  workflow_dispatch: {}    # botón para lanzarlo a mano
+
+permissions:
+  contents: write          # necesario para el commit keep-alive
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar cliente de PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Hacer la copia (pg_dump)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Falta el secreto DATABASE_URL en el repo. Añádelo en Settings -> Secrets -> Actions."
+            exit 1
+          fi
+          STAMP="$(date -u +%Y-%m-%d_%H%M)"
+          echo "Volcando base de datos -> flickpick_db_$STAMP.sql.gz"
+          pg_dump --no-owner --no-privileges "$DATABASE_URL" | gzip -9 > "flickpick_db_$STAMP.sql.gz"
+          ls -lh "flickpick_db_$STAMP.sql.gz"
+          test -s "flickpick_db_$STAMP.sql.gz"
+
+      - name: Subir la copia (se guarda 90 dias)
+        uses: actions/upload-artifact@v4
+        with:
+          name: flickpick-db-backup-${{ github.run_id }}
+          path: "*.sql.gz"
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Keep-alive (evita que GitHub pause el robot)
+        run: |
+          mkdir -p .backup-state
+          date -u +"Ultima copia OK: %Y-%m-%dT%H:%M:%SZ" > .backup-state/last-backup.txt
+          git config user.name "flickpick-backup-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add .backup-state/last-backup.txt
+          git commit -m "chore(backup): keep-alive [skip ci]" || echo "sin cambios"
+          git push || echo "push omitido"
